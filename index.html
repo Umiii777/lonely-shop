@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>孤独的美食店</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <div>
+          <h1>孤独的美食店</h1>
+        </div>
+      </div>
+      <div class="top-stats">
+        <div><span>现金</span><strong id="cash">1000</strong></div>
+        <div><span>天数</span><strong id="round">1/10</strong></div>
+        <div id="goal-stat"><span>目标</span><strong id="goal">10000</strong></div>
+        <div><span>时刻</span><strong id="clock-label">06:00</strong></div>
+      </div>
+    </header>
+    <section id="screen-config" hidden></section>
+    <section id="screen-sim" hidden></section>
+    <section id="screen-report" hidden></section>
+    <div id="modal" class="modal-back" hidden></div>
+  </div>
+  <div id="title-screen">
+    <div class="title-card">
+      <span class="mark" aria-hidden="true"></span>
+      <p class="eyebrow">十天 · 从 1000 到 10000</p>
+      <h1>孤独的美食店</h1>
+      <div class="title-actions">
+        <button type="button" id="start-game" class="title-start">开始</button>
+        <button type="button" id="open-settings" class="title-settings">设置</button>
+      </div>
+      <p id="title-note" class="title-note" hidden>设置以后再做。</p>
+    </div>
+  </div>
+  <div id="guide" hidden>
+    <div class="guide-shade guide-n"></div>
+    <div class="guide-shade guide-e"></div>
+    <div class="guide-shade guide-s"></div>
+    <div class="guide-shade guide-w"></div>
+    <div id="guide-ring"></div>
+    <div id="guide-box">
+      <p id="guide-kicker"></p>
+      <p id="guide-text"></p>
+      <button type="button" id="guide-next" hidden>知道了</button>
+    </div>
+  </div>
+  <script src="js/config.js"></script>
+  <script src="js/sim.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
