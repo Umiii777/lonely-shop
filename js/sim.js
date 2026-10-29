@@ -108,6 +108,7 @@
       diners: [],
       departures: [],
       seatDenied: 0,
+      passed: 0,
       minRemaining: Infinity,
       stepId: 0,
       report: null
@@ -330,7 +331,20 @@
       return source[Math.floor(Math.random() * source.length)];
     }
 
+    function waitingOutside() {
+      var count = 0;
+      run.customers.forEach(function (customer) {
+        if (customer.status === "active" && customer.table == null) count += 1;
+      });
+      return count;
+    }
+
     function spawnOne(arrivalTime) {
+      var cap = config.entranceWaitCap == null ? 5 : config.entranceWaitCap;
+      if (waitingOutside() >= cap) {
+        run.passed += 1;
+        return;
+      }
       var customer = {
         id: run.nextId++,
         dishId: null,
@@ -745,15 +759,20 @@
           mood: customer.mood || ""
         });
       }
-      stations.kitchen.queue.forEach(function (customer, index) { pushGuest(customer, "wait", index); });
-      stations.kitchen.slots.forEach(function (slot, index) {
-        if (slot.current) pushGuest(slot.current.customer, "wait-front", index);
+      var stool = 0;
+      function pushOutside(customer, where) {
+        pushGuest(customer, where, stool);
+        stool += 1;
+      }
+      stations.kitchen.queue.forEach(function (customer) { pushOutside(customer, "wait"); });
+      stations.kitchen.slots.forEach(function (slot) {
+        if (slot.current) pushOutside(slot.current.customer, "wait-front");
       });
-      stations.cashier.queue.forEach(function (customer, index) { pushGuest(customer, "pay-line", index); });
-      stations.cashier.slots.forEach(function (slot, index) {
-        if (slot.current) pushGuest(slot.current.customer, "paying", index);
+      stations.cashier.queue.forEach(function (customer) { pushOutside(customer, "pay-line"); });
+      stations.cashier.slots.forEach(function (slot) {
+        if (slot.current) pushOutside(slot.current.customer, "paying");
       });
-      stations.serve.queue.forEach(function (customer, index) { pushGuest(customer, "food-ready", index); });
+      stations.serve.queue.forEach(function (customer) { pushOutside(customer, "food-ready"); });
       stations.serve.slots.forEach(function (slot) {
         if (!slot.current) return;
         pushGuest(slot.current.customer, "seating", 0);
@@ -808,6 +827,7 @@
           dishId: customer.dishId,
           dishName: dish ? dish.name : "",
           table: customer.table,
+          seat: customer.seat,
           duration: duration,
           remaining: Math.max(0, slot.current.remaining),
           progress: duration > 0 ? 1 - slot.current.remaining / duration : 1,
@@ -878,6 +898,7 @@
                 dishName: job ? job.dishName : "",
                 progress: job ? job.progress : 0,
                 table: job ? job.table : null,
+                seat: job ? job.seat : null,
                 busy: !!job
               };
             }),

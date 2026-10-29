@@ -31,7 +31,7 @@
     gear: {
       stoves: CONFIG.startingStoves,
       tills: CONFIG.startingTills,
-      tables: 1
+      tables: 2
     },
     upgradeChoice: null,
     clockMin: CONFIG.dayStart,
@@ -185,7 +185,7 @@
     var tier = shopTier();
     game.gear.stoves = CONFIG.startingStoves;
     game.gear.tills = CONFIG.startingTills;
-    game.gear.tables = tier === 1 ? 1 : tier === 2 ? 2 : CONFIG.startingTables;
+    game.gear.tables = tier === 1 ? 2 : tier === 2 ? 3 : CONFIG.startingTables;
     refreshTables();
   }
 
@@ -206,7 +206,7 @@
   }
 
   function gearLine() {
-    return tierLabel(shopTier()) + " · " + game.gear.tables + " 张桌子 · " + seatCount() + " 个座位";
+    return tierLabel(shopTier()) + " · 吧台 " + seatCount() + " 个座位";
   }
 
   function crewNames(stationId) {
@@ -480,19 +480,23 @@
     );
   }
 
-  function tableBlock(index) {
-    var pos = tablePos(index);
-    return (
-      '<div class="dine-table' + (index >= 4 ? " is-added" : "") + '" style="left:' + pos.x + "%;top:" + pos.y + '%">' +
-        '<span class="chair north"></span><span class="chair south"></span><span class="top"></span>' +
-        "<b>" + (index + 1) + "</b>" +
-      "</div>"
-    );
+  function stoolBlock(index) {
+    var pos = barSeatSpots()[index];
+    return '<div class="bar-stool" style="left:' + pos.x + "%;top:" + pos.y + '%"></div>';
+  }
+
+  function waitStoolBlock(index) {
+    var pos = WAIT_STOOLS[index];
+    return '<div class="wait-stool" style="left:' + pos.x + "%;top:" + pos.y + '%"></div>';
   }
 
   function renderSimShell() {
-    var tables = "";
-    for (var i = 0; i < game.gear.tables; i++) tables += tableBlock(i);
+    var stools = "";
+    var waitStools = "";
+    var seatTotal = seatCount();
+    var s;
+    for (s = 0; s < seatTotal; s++) stools += stoolBlock(s);
+    for (s = 0; s < WAIT_STOOLS.length; s++) waitStools += waitStoolBlock(s);
     simScreen.innerHTML =
       '<div class="sim-top">' +
         '<div class="dayclock">' +
@@ -516,22 +520,27 @@
       '<div class="sim-layout">' +
         '<div class="room-wrap" id="room-wrap" data-sky="dawn">' +
         '<div class="room izakaya" id="room">' +
+          '<div class="shop-frame" aria-hidden="true"></div>' +
           '<div class="backsplash" aria-hidden="true"></div>' +
-          '<div class="bar" aria-hidden="true"><span>柜台</span></div>' +
+          '<div class="shop-bar" aria-hidden="true"></div>' +
           '<section class="zone kitchen" id="zone-kitchen">' +
-            '<h2>灶</h2>' +
-            '<div class="stove"><div class="gear-row" id="stove-row"></div><span class="stove-art" id="stove-art"></span><span class="meter"><i id="stove-fill"></i></span><em id="stove-label">灶台空闲</em></div>' +
+            '<h2>后厨</h2>' +
+            '<div class="stove"><div class="gear-row" id="stove-row"></div><span class="stove-art" id="stove-art"></span><span class="meter"><i id="stove-fill"></i></span><em id="stove-label">空闲</em></div>' +
             '<div class="fridge"></div>' +
             '<p class="zone-status" id="status-kitchen"></p>' +
           "</section>" +
           '<section class="zone cashier" id="zone-cashier">' +
-            '<h2>账</h2>' +
+            '<h2>收银台</h2>' +
             '<div class="counter"><div class="gear-row" id="till-row"></div><span class="meter"><i id="till-fill"></i></span><em id="till-label">空闲</em></div>' +
             '<p class="zone-status" id="status-cashier"></p>' +
           "</section>" +
           '<section class="zone dining" id="zone-dining"><p class="seat-note" id="seat-note"></p><div class="plant"></div></section>' +
-          tables +
+          stools +
           '<div class="entrance"><span>门口</span><p id="door-note">客人即将进门</p></div>' +
+          '<div class="sidewalk" aria-hidden="true"></div>' +
+          waitStools +
+          '<div class="street" aria-hidden="true"></div>' +
+          '<div class="street-people" id="street-people"></div>' +
           '<div class="crew" id="crew"></div>' +
           '<div class="guests" id="guests"></div>' +
         "</div>" +
@@ -553,50 +562,44 @@
     syncTransport();
   }
 
-  var TABLE_SPOTS = [
-    { x: 63, y: 24 },
-    { x: 84, y: 24 },
-    { x: 63, y: 50 },
-    { x: 84, y: 50 },
-    { x: 73.5, y: 72 },
-    { x: 51, y: 36 },
-    { x: 51, y: 60 },
-    { x: 51, y: 16 },
-    { x: 90, y: 72 },
-    { x: 57, y: 72 },
-    { x: 90, y: 12 },
-    { x: 73.5, y: 12 }
-  ];
-
-  function tablePos(index) {
-    var tier = shopTier();
-    var spots = tier === 1
-      ? [{ x: 46, y: 60 }]
-      : tier === 2
-        ? [{ x: 36, y: 60 }, { x: 60, y: 60 }]
-        : [{ x: 28, y: 60 }, { x: 44, y: 60 }, { x: 60, y: 60 }, { x: 76, y: 60 }];
-    if (index < spots.length) return spots[index];
-    return { x: 24 + (index % 5) * 14, y: 60 };
+  function barSeatSpots() {
+    var count = Math.max(1, seatCount());
+    var spots = [];
+    var left = 18;
+    var right = 82;
+    var i;
+    for (i = 0; i < count; i++) {
+      var x = count === 1 ? (left + right) / 2 : left + (right - left) * (i / (count - 1));
+      spots.push({ x: x, y: 37.5 });
+    }
+    return spots;
   }
-  var DOOR = { x: 16, y: 90 };
+
+  var WAIT_STOOLS = [
+    { x: 18, y: 68 },
+    { x: 30, y: 68 },
+    { x: 42, y: 68 },
+    { x: 54, y: 68 },
+    { x: 66, y: 68 }
+  ];
+  var DOOR = { x: 16, y: 58 };
+  var OUTSIDE = { wait: 1, "wait-front": 1, "pay-line": 1, paying: 1, "food-ready": 1 };
 
   function seatPos(table, seat) {
-    var spot = tablePos(table);
-    return { x: spot.x + (seat === 1 ? 4.4 : -4.4), y: spot.y };
+    var spots = barSeatSpots();
+    var index = (table || 0) * (CONFIG.seatsPerTable || 2) + (seat || 0);
+    if (index < 0) index = 0;
+    if (index >= spots.length) index = spots.length - 1;
+    return spots[index];
   }
 
   function placeOf(person) {
-    var slot = person.slot || 0;
-    if (person.where === "wait-front") return { x: 40, y: 52 + (slot % 3) * 5 };
-    if (person.where === "wait") {
-      return { x: 28 + (slot % 4) * 7, y: 76 + Math.floor(slot / 4) * 6 };
+    if (OUTSIDE[person.where]) {
+      var stool = WAIT_STOOLS[Math.max(0, Math.min(person.slot || 0, WAIT_STOOLS.length - 1))];
+      return { x: stool.x, y: stool.y };
     }
-    if (person.where === "paying") return { x: 68 + (slot % 2) * 5, y: 52 };
-    if (person.where === "pay-line") {
-      return { x: 74, y: 64 + (slot % 3) * 6 };
-    }
-    if (person.where === "food-ready") return { x: 48, y: 44 + (slot % 3) * 3 };
     if (person.where === "seating" || person.where === "eating") return seatPos(person.table, person.seat);
+    if (person.where === "leaving" || person.where === "walkout") return { x: person.id % 2 ? 108 : -8, y: 90 };
     return DOOR;
   }
 
@@ -640,6 +643,7 @@
     return "guest skin-" + look.skin + " hairc-" + look.hair + " style-" + styles[look.style] + " shirt-" + look.shirt + " extra-" + extras[look.extra] +
       (person.late ? " is-late" : "") +
       (person.where === "eating" ? " is-eating" : "") +
+      (OUTSIDE[person.where] ? " is-waiting" : "") +
       (person.where === "leaving" || person.where === "walkout" ? " is-leaving" : "") +
       (picked ? " is-picked" : "");
   }
@@ -653,12 +657,23 @@
       var el = layer.querySelector('[data-key="' + person.key + '"]');
       var spot = placeOf(person);
       if (!game.sprites[person.key]) {
-        var fromDoor = person.where === "wait" || person.where === "wait-front";
-        game.sprites[person.key] = fromDoor ? { x: DOOR.x, y: DOOR.y } : { x: spot.x, y: spot.y };
+        var fromStreet = OUTSIDE[person.where];
+        game.sprites[person.key] = fromStreet
+          ? { x: person.id % 2 ? 112 : -12, y: 90 }
+          : { x: spot.x, y: spot.y };
       }
       var sprite = game.sprites[person.key];
-      sprite.x += (spot.x - sprite.x) * 0.22;
-      sprite.y += (spot.y - sprite.y) * 0.22;
+      var dx = spot.x - sprite.x;
+      var dy = spot.y - sprite.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var step = 0.7;
+      if (dist > step) {
+        sprite.x += dx / dist * step;
+        sprite.y += dy / dist * step;
+      } else {
+        sprite.x = spot.x;
+        sprite.y = spot.y;
+      }
       if (!el) {
         el = document.createElement("button");
         el.type = "button";
@@ -688,9 +703,9 @@
   }
 
   var CREW_HOME = {
-    kitchen: [{ x: 30, y: 26 }, { x: 22, y: 22 }, { x: 34, y: 20 }, { x: 18, y: 28 }],
-    cashier: [{ x: 64, y: 26 }, { x: 72, y: 22 }, { x: 60, y: 20 }, { x: 76, y: 28 }],
-    serve: [{ x: 46, y: 34 }, { x: 52, y: 32 }, { x: 40, y: 32 }, { x: 56, y: 34 }]
+    kitchen: [{ x: 30, y: 28 }, { x: 22, y: 26 }, { x: 36, y: 26 }, { x: 18, y: 29 }],
+    cashier: [{ x: 68, y: 28 }, { x: 76, y: 26 }, { x: 62, y: 26 }, { x: 80, y: 29 }],
+    serve: [{ x: 48, y: 29 }, { x: 54, y: 27 }, { x: 42, y: 27 }, { x: 58, y: 29 }]
   };
 
   function crewStatus(station, queueWord) {
@@ -702,9 +717,9 @@
     var homes = CREW_HOME[stationId] || CREW_HOME.serve;
     var home = homes[member.index % homes.length];
     if (stationId === "serve" && member.busy && member.table != null) {
-      var table = tablePos(member.table);
+      var seat = seatPos(member.table, member.seat || 0);
       return {
-        x: home.x + (table.x - home.x) * member.progress,
+        x: home.x + (seat.x - home.x) * member.progress,
         y: home.y
       };
     }
@@ -745,7 +760,7 @@
       el.querySelector("em").textContent = staff.name;
       var spot = member
         ? crewSpot(stationId, member)
-        : { x: 24 + bench * 7, y: 84 };
+        : { x: 72 + bench * 6, y: 54 };
       if (!member) bench += 1;
       if (!game.crewSprites[staff.id]) game.crewSprites[staff.id] = { x: spot.x, y: spot.y };
       var body = game.crewSprites[staff.id];
@@ -944,7 +959,11 @@
       else if (game.shiftIndex < game.shifts.length) setText("door-note", game.shifts[game.shiftIndex].name + " " + hourLabel(game.shifts[game.shiftIndex].start));
       else setText("door-note", "今日打烊");
     } else {
-      setText("door-note", state.accepting ? "下一位约 " + state.nextArrival.toFixed(0) + " 秒" : "本班即将结束");
+      var waiting = state.people.filter(function (person) { return OUTSIDE[person.where]; }).length;
+      var cap = CONFIG.entranceWaitCap || 5;
+      if (!state.accepting) setText("door-note", "本班即将结束");
+      else if (waiting >= cap) setText("door-note", "坐满了");
+      else setText("door-note", "等位 " + waiting + "/" + cap);
     }
 
     var byId = {};
@@ -967,7 +986,7 @@
     setText("status-cashier", crewStatus(cashier, "排队"));
     var stoveNames = (state.stoves || []).map(function (job) { return job.dishName; });
     var tillNames = (state.tills || []).map(function (job) { return job.dishName; });
-    setText("stove-label", !kitchen.staffIds.length ? "没人，卡在后厨" : stoveNames.length ? "正在做 " + stoveNames.join("、") : "灶台空闲");
+    setText("stove-label", !kitchen.staffIds.length ? "没人" : stoveNames.length ? "正在做 " + stoveNames.join("、") : "空闲");
     setText("till-label", !cashier.staffIds.length ? "没人，卡在收银" : tillNames.length ? "结账 " + tillNames.join("、") : "空闲");
     var stoveFill = document.getElementById("stove-fill");
     var tillFill = document.getElementById("till-fill");
@@ -1037,20 +1056,66 @@
       profitNode.classList.toggle("is-neg", profit < 0);
     }
     game.simKey = key;
+    tickStreet();
     paintCoach();
   }
 
   function whereLine(person) {
-    var tableNo = (person.table == null ? 0 : person.table) + 1;
-    if (person.where === "wait") return "在门口排队等餐，前面还有 " + person.slot + " 人。";
-    if (person.where === "wait-front") return "站在出餐口，菜正在灶台上。";
-    if (person.where === "pay-line") return "在收银台排队，前面还有 " + person.slot + " 人。";
-    if (person.where === "paying") return "正把" + person.dishName + "的钱递给收银。";
-    if (person.where === "food-ready") return person.dishName + "已经做好，等传菜员来端。";
-    if (person.where === "seating") return "跟着菜往 " + tableNo + " 号桌走。";
-    if (person.where === "eating") return "坐在 " + tableNo + " 号桌吃饭。";
+    if (person.where === "wait") return "坐在门口的小凳上等位子，前面还有 " + person.slot + " 人。";
+    if (person.where === "wait-front") return "还坐在门口的小凳上，后厨正在做他的菜。";
+    if (person.where === "pay-line") return "还坐在门口的小凳上，等着付钱。";
+    if (person.where === "paying") return "还坐在门口的小凳上，正在把" + person.dishName + "的钱结掉。";
+    if (person.where === "food-ready") return person.dishName + "已经做好，他还坐在门口，等一个吧台座位。";
+    if (person.where === "seating") return "跟着菜往吧台走。";
+    if (person.where === "eating") return "坐在吧台吃饭。";
     if (person.where === "leaving") return "吃完了，正往门口走。";
     return "等太久，决定离开。";
+  }
+
+  function tickStreet() {
+    var layer = document.getElementById("street-people");
+    if (!layer) return;
+    if (!game.walkers) game.walkers = [];
+    var frozen = game.paused || game.phase !== "sim" || game.modal;
+    if (!frozen) {
+      if (!game.walkerWait) game.walkerWait = 0;
+      game.walkerWait += 1;
+      if (game.walkerWait > 40 && game.walkers.length < 4) {
+        game.walkerWait = 0;
+        var dir = Math.random() < 0.5 ? 1 : -1;
+        var look = Math.floor(Math.random() * 90) + 1;
+        game.walkers.push({
+          x: dir > 0 ? -14 : 114,
+          y: 84 + (look % 3) * 1.6,
+          dir: dir,
+          speed: 0.26 + (look % 5) * 0.07,
+          look: look,
+          glance: look % 3 !== 2
+        });
+      }
+      game.walkers.forEach(function (walker) {
+        var nearDoor = Math.abs(walker.x - 22) < 12;
+        if (walker.glance && nearDoor && !walker.glanced) {
+          walker.y = Math.max(78, walker.y - 0.2);
+          walker.speed = Math.max(0.06, walker.speed * 0.9);
+          if (walker.y <= 78.3) walker.glanced = true;
+        } else if (walker.glanced) {
+          walker.speed = Math.min(0.62, walker.speed + 0.025);
+          walker.y = Math.min(88, walker.y + 0.16);
+        }
+        walker.x += walker.dir * walker.speed;
+      });
+      game.walkers = game.walkers.filter(function (walker) {
+        return walker.x > -18 && walker.x < 118;
+      });
+    }
+    var styles = ["short", "bob", "bun", "long", "spike"];
+    layer.innerHTML = game.walkers.map(function (walker) {
+      var look = lookOf(walker.look + 7);
+      var flip = walker.dir < 0 ? " is-flip" : "";
+      return '<div class="guest passer skin-' + look.skin + " hairc-" + look.hair + " style-" + styles[look.style] + " shirt-" + look.shirt + flip +
+        '" style="left:' + walker.x.toFixed(2) + "%;top:" + walker.y.toFixed(2) + '%"><span class="hair"></span><span class="face"></span><span class="torso"></span></div>';
+    }).join("");
   }
 
   function guestNote(person) {
@@ -1062,7 +1127,7 @@
     if (person.where === "leaving") return "这单已经算完成。看他从座位走到门口。";
     if (person.where === "walkout") return "他没有吃上这顿。未完成的单不会进账。";
     if (person.late) return "已经等了 " + person.wait.toFixed(0) + " 秒，耐心只剩 " + left.toFixed(0) + " 秒。再堵住，他就走了。";
-    if (person.where === "wait" || person.where === "wait-front") return "还愿意等 " + left.toFixed(0) + " 秒。后厨一慢，这种人会在门口越聚越多。";
+    if (OUTSIDE[person.where]) return "还愿意等 " + left.toFixed(0) + " 秒。等太久没有坐上吧台，他就会起身离开。门口外面最多五张小凳。";
     if (person.where === "paying" || person.where === "pay-line") return "菜已经做好，卡在付钱这一步。收银慢的话，后面的桌就空着。";
     return "菜在出餐口。传菜一慢，做好的餐会堆在这里，客人还没坐下。";
   }
@@ -1482,11 +1547,12 @@
   function refreshTables() {
     var room = document.getElementById("room");
     if (!room) return;
-    Array.prototype.slice.call(room.querySelectorAll(".dine-table")).forEach(function (node) {
+    Array.prototype.slice.call(room.querySelectorAll(".bar-stool")).forEach(function (node) {
       node.remove();
     });
     var html = "";
-    for (var i = 0; i < game.gear.tables; i++) html += tableBlock(i);
+    var seats = seatCount();
+    for (var i = 0; i < seats; i++) html += stoolBlock(i);
     var crew = document.getElementById("crew");
     if (crew) crew.insertAdjacentHTML("beforebegin", html);
   }

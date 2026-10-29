@@ -19,6 +19,8 @@
     customerIntervalMin: 2,
     customerIntervalMax: 4,
     customerPatience: 25,
+    // 门口外面最多这么多张等位小凳。坐满后新来的人不会停下。
+    entranceWaitCap: 5,
     staffCost: 40,
     cashierBaseTime: 3.8,
     serveBaseTime: 3.5,
