@@ -1,6 +1,6 @@
 # 小店实验室
 
-直接复制https://umiii777.github.io/lonely-shop/到网页栏即可打开
+直接复制 ‘ https://umiii777.github.io/lonely-shop/ ’   到网页栏即可打开
 
 单页 H5。用浏览器直接打开 `index.html` 即可，不需要安装依赖，也不需要服务器。
 
