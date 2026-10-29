@@ -102,11 +102,12 @@
       left: 0,
       leftBy: { kitchen: 0, cashier: 0, serve: 0, entrance: 0 },
       abandoned: 0,
-      abandonedBy: { kitchen: 0, cashier: 0, serve: 0 },
+      abandonedBy: { kitchen: 0, cashier: 0, serve: 0, entrance: 0 },
       events: [],
       recentLeft: [],
       diners: [],
       departures: [],
+      entrance: [],
       seatDenied: 0,
       passed: 0,
       minRemaining: Infinity,
@@ -187,6 +188,9 @@
     }
 
     function detach(customer) {
+      run.entrance = run.entrance.filter(function (item) {
+        return item !== customer;
+      });
       var station = stations[customer.station];
       if (!station) return;
       station.queue = station.queue.filter(function (item) {
@@ -331,17 +335,27 @@
       return source[Math.floor(Math.random() * source.length)];
     }
 
-    function waitingOutside() {
-      var count = 0;
-      run.customers.forEach(function (customer) {
-        if (customer.status === "active" && customer.table == null) count += 1;
-      });
-      return count;
+    function offerSeats() {
+      var index = 0;
+      while (index < run.entrance.length) {
+        var customer = run.entrance[index];
+        if (customer.status !== "active") {
+          run.entrance.splice(index, 1);
+          continue;
+        }
+        var seat = claimSeat();
+        if (!seat) return;
+        run.entrance.splice(index, 1);
+        customer.table = seat.table;
+        customer.seat = seat.seat;
+        enqueue("kitchen", customer);
+        pushEvent("#" + customer.id + " 等到空位，坐进吧台");
+      }
     }
 
     function spawnOne(arrivalTime) {
       var cap = config.entranceWaitCap == null ? 5 : config.entranceWaitCap;
-      if (waitingOutside() >= cap) {
+      if (run.entrance.length >= cap) {
         run.passed += 1;
         return;
       }
@@ -372,9 +386,28 @@
         return;
       }
       customer.dishId = dish.id;
+      if (run.entrance.length) {
+        customer.station = "entrance";
+        customer.phase = "queue";
+        customer.queueEnterTime = arrivalTime;
+        run.entrance.push(customer);
+        pushEvent("#" + customer.id + " 到店，吧台坐满了，在门口等座位");
+        return;
+      }
+      var seat = claimSeat();
+      if (!seat) {
+        customer.station = "entrance";
+        customer.phase = "queue";
+        customer.queueEnterTime = arrivalTime;
+        run.entrance.push(customer);
+        pushEvent("#" + customer.id + " 到店，吧台坐满了，在门口等座位");
+        return;
+      }
+      customer.table = seat.table;
+      customer.seat = seat.seat;
       enqueue("kitchen", customer);
       customer.queueEnterTime = arrivalTime;
-      pushEvent("#" + customer.id + " 到店，点了" + dish.name);
+      pushEvent("#" + customer.id + " 到店，坐到吧台，点了" + dish.name);
     }
 
     function spawn() {
@@ -385,6 +418,9 @@
     }
 
     function expire() {
+      run.entrance.slice().forEach(function (customer) {
+        if (customer.status === "active" && isImpatient(customer)) leave(customer, "entrance");
+      });
       STATION_ORDER.forEach(function (id) {
         var station = stations[id];
         station.queue.slice().forEach(function (customer) {
@@ -544,10 +580,13 @@
       run.time += slice;
       spawn();
       expire();
+      offerSeats();
       pickup();
       progress(slice);
       expire();
+      offerSeats();
       tickDiners();
+      offerSeats();
       sampleQueues();
       if (run.time >= config.dayDuration - 1e-8) run.over = true;
     };
@@ -562,6 +601,14 @@
     };
 
     function finalize() {
+      run.entrance.slice().forEach(function (customer) {
+        if (customer.status !== "active") return;
+        customer.status = "abandoned";
+        customer.resolveTime = run.time;
+        run.abandoned += 1;
+        run.abandonedBy.entrance += 1;
+      });
+      run.entrance = [];
       STATION_ORDER.forEach(function (id) {
         var station = stations[id];
         station.queue.slice().forEach(function (customer) {
@@ -689,7 +736,8 @@
         abandonedBy: {
           kitchen: run.abandonedBy.kitchen,
           cashier: run.abandonedBy.cashier,
-          serve: run.abandonedBy.serve
+          serve: run.abandonedBy.serve,
+          entrance: run.abandonedBy.entrance
         },
         mainLeftStage: argmax(run.leftBy),
         mainAbandonedStage: argmax(run.abandonedBy),
@@ -759,20 +807,21 @@
           mood: customer.mood || ""
         });
       }
-      var stool = 0;
-      function pushOutside(customer, where) {
-        pushGuest(customer, where, stool);
-        stool += 1;
+      run.entrance.forEach(function (customer, index) {
+        if (customer.status === "active") pushGuest(customer, "wait", index);
+      });
+      function pushInside(customer, fallback) {
+        pushGuest(customer, customer.table != null ? "seated" : fallback, 0);
       }
-      stations.kitchen.queue.forEach(function (customer) { pushOutside(customer, "wait"); });
+      stations.kitchen.queue.forEach(function (customer) { pushInside(customer, "wait"); });
       stations.kitchen.slots.forEach(function (slot) {
-        if (slot.current) pushOutside(slot.current.customer, "wait-front");
+        if (slot.current) pushInside(slot.current.customer, "wait-front");
       });
-      stations.cashier.queue.forEach(function (customer) { pushOutside(customer, "pay-line"); });
+      stations.cashier.queue.forEach(function (customer) { pushInside(customer, "pay-line"); });
       stations.cashier.slots.forEach(function (slot) {
-        if (slot.current) pushOutside(slot.current.customer, "paying");
+        if (slot.current) pushInside(slot.current.customer, "paying");
       });
-      stations.serve.queue.forEach(function (customer) { pushOutside(customer, "food-ready"); });
+      stations.serve.queue.forEach(function (customer) { pushInside(customer, "food-ready"); });
       stations.serve.slots.forEach(function (slot) {
         if (!slot.current) return;
         pushGuest(slot.current.customer, "seating", 0);

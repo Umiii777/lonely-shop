@@ -18,6 +18,12 @@
     ],
     customerIntervalMin: 2,
     customerIntervalMax: 4,
+    // 按天数分三档，不跟店面设备联动。第 1 天少，第 2–4 天中，第 5 天起多。
+    traffic: [
+      { name: "少", min: 7, max: 10 },
+      { name: "中", min: 4, max: 7 },
+      { name: "多", min: 2, max: 4 }
+    ],
     customerPatience: 25,
     // 门口外面最多这么多张等位小凳。坐满后新来的人不会停下。
     entranceWaitCap: 5,

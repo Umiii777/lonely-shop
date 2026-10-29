@@ -654,7 +654,8 @@ h2 { font-size: 16px; }
 }
 
 .guest .mini-plate { display: none; }
-.guest.is-eating { transform: translate(-50%, -62%); }
+.guest.is-eating,
+.guest.is-seated { transform: translate(-50%, -62%); }
 .guest.is-waiting { transform: translate(-50%, -70%); }
 .guest.is-flip { transform: translate(-50%, -50%) scaleX(-1); }
 .guest.is-eating .mini-plate {
@@ -1060,7 +1061,7 @@ button.worker {
 }
 
 .stove.is-multi,
-.counter.is-multi { height: 108px; }
+.counter.is-multi { height: 72px; }
 
 .stove.is-multi em,
 .counter.is-multi em {

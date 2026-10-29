@@ -183,8 +183,8 @@
 
   function applyTier() {
     var tier = shopTier();
-    game.gear.stoves = CONFIG.startingStoves;
-    game.gear.tills = CONFIG.startingTills;
+    if (!game.gear.stoves) game.gear.stoves = CONFIG.startingStoves;
+    if (!game.gear.tills) game.gear.tills = CONFIG.startingTills;
     game.gear.tables = tier === 1 ? 2 : tier === 2 ? 3 : CONFIG.startingTables;
     refreshTables();
   }
@@ -205,8 +205,13 @@
     return game.gear.tables * (CONFIG.seatsPerTable || 2);
   }
 
+  function trafficBand() {
+    var tiers = CONFIG.traffic || [];
+    return tiers[shopTier() - 1] || tiers[tiers.length - 1] || { name: "少", min: 7, max: 10 };
+  }
+
   function gearLine() {
-    return tierLabel(shopTier()) + " · 吧台 " + seatCount() + " 个座位";
+    return tierLabel(shopTier()) + " · 灶台 " + game.gear.stoves + " · 收银台 " + game.gear.tills + " · 吧台 " + seatCount() + " 个座位 · 人流" + trafficBand().name;
   }
 
   function crewNames(stationId) {
@@ -324,7 +329,7 @@
     rush: { kicker: "第 4 步", text: "点「快进到午市」开门。一天有午市和晚市，两班都会来客人。", selector: "[data-action='ff-shift']" },
     watch: { kicker: "第 5 步 · 面板", text: "点店里的人，打开他的面板。", selector: "#crew .worker" },
     panel: { kicker: "第 6 步 · 面板", text: "这里能看到他在做什么，也能改分工。看完点「关闭」。", selector: "#inspect.is-open" },
-    hire: { kicker: "打烊", text: "打烊可以请一个人。人放对岗位，单才能同时做。请人会增加每天的人工。", selector: "#modal [data-hire]:not([data-hire='skip'])" },
+    hire: { kicker: "打烊", text: "今晚三选一：请一个人、加一台灶，或加一台收银台。灶和收银台决定后厨、收银能站几个人。", selector: "#modal [data-upgrade='hire']" },
     place: { kicker: "分工", text: "点「去传菜」，给新人一个岗位。擅长的岗位更快。", selector: "#modal [data-post='serve']" }
   };
 
@@ -594,11 +599,14 @@
   }
 
   function placeOf(person) {
-    if (OUTSIDE[person.where]) {
+    if (person.table != null && person.where !== "leaving" && person.where !== "walkout") {
+      return seatPos(person.table, person.seat);
+    }
+    if (person.where === "wait" || OUTSIDE[person.where]) {
       var stool = WAIT_STOOLS[Math.max(0, Math.min(person.slot || 0, WAIT_STOOLS.length - 1))];
       return { x: stool.x, y: stool.y };
     }
-    if (person.where === "seating" || person.where === "eating") return seatPos(person.table, person.seat);
+    if (person.where === "seating" || person.where === "eating" || person.where === "seated") return seatPos(person.table, person.seat);
     if (person.where === "leaving" || person.where === "walkout") return { x: person.id % 2 ? 108 : -8, y: 90 };
     return DOOR;
   }
@@ -643,7 +651,8 @@
     return "guest skin-" + look.skin + " hairc-" + look.hair + " style-" + styles[look.style] + " shirt-" + look.shirt + " extra-" + extras[look.extra] +
       (person.late ? " is-late" : "") +
       (person.where === "eating" ? " is-eating" : "") +
-      (OUTSIDE[person.where] ? " is-waiting" : "") +
+      (person.where === "seated" ? " is-seated" : "") +
+      (person.where === "wait" ? " is-waiting" : "") +
       (person.where === "leaving" || person.where === "walkout" ? " is-leaving" : "") +
       (picked ? " is-picked" : "");
   }
@@ -657,7 +666,7 @@
       var el = layer.querySelector('[data-key="' + person.key + '"]');
       var spot = placeOf(person);
       if (!game.sprites[person.key]) {
-        var fromStreet = OUTSIDE[person.where];
+        var fromStreet = person.where === "wait";
         game.sprites[person.key] = fromStreet
           ? { x: person.id % 2 ? 112 : -12, y: 90 }
           : { x: spot.x, y: spot.y };
@@ -959,11 +968,14 @@
       else if (game.shiftIndex < game.shifts.length) setText("door-note", game.shifts[game.shiftIndex].name + " " + hourLabel(game.shifts[game.shiftIndex].start));
       else setText("door-note", "今日打烊");
     } else {
-      var waiting = state.people.filter(function (person) { return OUTSIDE[person.where]; }).length;
+      var waiting = state.people.filter(function (person) { return person.where === "wait"; }).length;
       var cap = CONFIG.entranceWaitCap || 5;
+      var freeSeats = state.gear ? state.gear.free : 0;
       if (!state.accepting) setText("door-note", "本班即将结束");
       else if (waiting >= cap) setText("door-note", "坐满了");
-      else setText("door-note", "等位 " + waiting + "/" + cap);
+      else if (waiting > 0) setText("door-note", "等位 " + waiting + "/" + cap);
+      else if (freeSeats > 0) setText("door-note", "还有空位");
+      else setText("door-note", "吧台满了");
     }
 
     var byId = {};
@@ -1061,7 +1073,8 @@
   }
 
   function whereLine(person) {
-    if (person.where === "wait") return "坐在门口的小凳上等位子，前面还有 " + person.slot + " 人。";
+    if (person.where === "wait") return "吧台坐满了，坐在门口的小凳上等位子，前面还有 " + person.slot + " 人。";
+    if (person.where === "seated") return "已经坐在吧台，这单还在做。";
     if (person.where === "wait-front") return "还坐在门口的小凳上，后厨正在做他的菜。";
     if (person.where === "pay-line") return "还坐在门口的小凳上，等着付钱。";
     if (person.where === "paying") return "还坐在门口的小凳上，正在把" + person.dishName + "的钱结掉。";
@@ -1127,7 +1140,8 @@
     if (person.where === "leaving") return "这单已经算完成。看他从座位走到门口。";
     if (person.where === "walkout") return "他没有吃上这顿。未完成的单不会进账。";
     if (person.late) return "已经等了 " + person.wait.toFixed(0) + " 秒，耐心只剩 " + left.toFixed(0) + " 秒。再堵住，他就走了。";
-    if (OUTSIDE[person.where]) return "还愿意等 " + left.toFixed(0) + " 秒。等太久没有坐上吧台，他就会起身离开。门口外面最多五张小凳。";
+    if (person.where === "wait") return "还愿意等 " + left.toFixed(0) + " 秒。等太久没有坐上吧台，他就会起身离开。门口外面最多五张小凳。";
+    if (person.where === "seated") return "人已经在店里坐下。座位空着的时候，不会有人在门外排队。";
     if (person.where === "paying" || person.where === "pay-line") return "菜已经做好，卡在付钱这一步。收银慢的话，后面的桌就空着。";
     return "菜在出餐口。传菜一慢，做好的餐会堆在这里，客人还没坐下。";
   }
@@ -1314,72 +1328,118 @@
       "</div>" +
       '<p class="report-line">目标 ' + money(CONFIG.goalCash) + " · 完成 " + report.completed + " · 流失 " + report.left + " · 人工 " + money(report.staffCost) + "</p>" +
       (note && !game.outcome ? '<p class="report-line">' + escapeHtml(note) + "</p>" : "") +
-      (game.outcome ? "" : hirePanel()) +
+      (game.outcome ? "" : nightChoicePanel()) +
       '<footer class="action-bar">' + actions + "</footer>"
     );
   }
 
-  function hirePanel() {
+  function nightPick() {
+    if (game.hiredTonight && game.hiredTonight !== "skip") return "hire";
+    if (game.upgradeChoice === "stove" || game.upgradeChoice === "till") return game.upgradeChoice;
+    if (game.upgradeChoice === "skip" || game.hiredTonight === "skip") return "skip";
+    if (game.upgradeChoice === "hiring") return "hiring";
+    return "";
+  }
+
+  function gearRoom() {
+    return rosterPool().length;
+  }
+
+  function nightChoicePanel() {
     if (game.hiredTonight && game.hiredTonight !== "skip") {
       var person = staffById(game.hiredTonight);
       var posts = person ? postsOf(person.id) : [];
       return (
-        '<section class="panel upgrades"><header><h2>新人</h2><p>' + (person ? person.name + " 来了。点一个岗位。" : "") + "</p></header>" +
+        '<section class="panel upgrades"><header><h2>新人</h2><p>' + (person ? person.name + " 来了。点一个岗位。后厨不能超过灶台，收银不能超过收银台。" : "") + "</p></header>" +
         '<div class="upgrade-row">' +
           STATIONS.map(function (station) {
             var on = posts.indexOf(station.id) !== -1;
             return '<button type="button" data-post="' + station.id + '"' + (on ? ' class="is-on"' : "") + "><strong>" +
-              (on ? "离开" : "去") + station.name + "</strong></button>";
+              (on ? "离开" : "去") + station.name + "</strong><span>现在 " + crewOf(station.id).length + (stationCap(station.id) === Infinity ? " 人" : " / " + stationCap(station.id) + " 人") + "</span></button>";
           }).join("") +
         "</div></section>"
       );
     }
-    var waiting = unhired();
-    if (!waiting.length || game.hiredTonight === "skip") {
-      return waiting.length ? "" : '<p class="report-line">人都到齐了。</p>';
+    if (game.upgradeChoice === "stove" || game.upgradeChoice === "till") {
+      return '<p class="report-line">' + upgradeHint(game.upgradeChoice) + "</p>";
     }
+    if (nightPick() === "skip") {
+      return '<p class="report-line">今晚先不选。明天打烊还可以再选一次。</p>';
+    }
+    if (game.upgradeChoice === "hiring") {
+      var waiting = unhired();
+      return (
+        '<section class="panel upgrades"><header><h2>请一位新人</h2><p>选一个。人工每天 +' + CONFIG.staffCost + " 元。今晚就不能再加灶台或收银台。</p></header>" +
+        '<div class="upgrade-row">' +
+          waiting.map(function (staff) {
+            return '<button type="button" data-hire="' + staff.id + '">' +
+              staffFigure(staff.id) +
+              "<strong>" + staff.name + "</strong><span>" + staff.trait + "</span></button>";
+          }).join("") +
+        "</div>" +
+        '<button type="button" class="upgrade-skip" data-upgrade="back">返回</button></section>'
+      );
+    }
+    var peopleLeft = unhired().length;
+    var stoveFull = game.gear.stoves >= gearRoom();
+    var tillFull = game.gear.tills >= gearRoom();
     return (
-      '<section class="panel upgrades"><header><h2>请一位新人</h2><p>每天打烊可以请一个人，人工每天 +' + CONFIG.staffCost + " 元。</p></header>" +
+      '<section class="panel upgrades"><header><h2>今晚选一样</h2><p>三选一。加一台设备，对应岗位就能多站一个人。请人会让每天人工 +' + CONFIG.staffCost + " 元。</p></header>" +
       '<div class="upgrade-row">' +
-        waiting.map(function (staff) {
-          return '<button type="button" data-hire="' + staff.id + '">' +
-            staffFigure(staff.id) +
-            "<strong>" + staff.name + "</strong><span>" + staff.trait + "</span></button>";
-        }).join("") +
+        '<button type="button" data-upgrade="stove"' + (stoveFull ? " disabled" : "") + "><strong>加一台灶台</strong><span>现在 " + game.gear.stoves + " 台，后厨能站 " + game.gear.stoves + " 人</span></button>" +
+        '<button type="button" data-upgrade="till"' + (tillFull ? " disabled" : "") + "><strong>加一台收银台</strong><span>现在 " + game.gear.tills + " 台，收银能站 " + game.gear.tills + " 人</span></button>" +
+        '<button type="button" data-upgrade="hire"' + (peopleLeft ? "" : " disabled") + "><strong>请一个人</strong><span>" + (peopleLeft ? "还有 " + peopleLeft + " 位可以请" : "人都到齐了") + "</span></button>" +
       "</div>" +
-      '<button type="button" class="upgrade-skip" data-hire="skip">今天先不请</button></section>'
+      '<button type="button" class="upgrade-skip" data-upgrade="skip">今晚先不选</button></section>'
     );
   }
 
   function applyUpgrade(kind) {
-    if (game.upgradeChoice && game.upgradeChoice !== "skip") return;
+    var pick = nightPick();
+    if (pick === "hire" || pick === "stove" || pick === "till") return;
+    if (kind === "back") {
+      game.upgradeChoice = null;
+      game.hint = "";
+      if (game.guide === "hire") GUIDE_STEPS.hire.selector = "#modal [data-upgrade='hire']";
+      renderModal();
+      return;
+    }
+    if (kind === "hire") {
+      if (!unhired().length) return;
+      game.upgradeChoice = "hiring";
+      game.hint = "选一位新人。";
+      if (game.guide === "hire") GUIDE_STEPS.hire.selector = "#modal [data-hire]:not([data-hire='skip'])";
+      renderModal();
+      return;
+    }
     if (kind === "skip") {
       game.upgradeChoice = "skip";
-      game.hint = "今天先不添。也可以改选一件设备。";
+      game.hiredTonight = "skip";
+      game.guide = "done";
+      game.hint = "今晚先不选。";
       renderModal();
       return;
     }
     if (kind === "stove") {
+      if (game.gear.stoves >= gearRoom()) return;
       game.gear.stoves += 1;
-      game.hint = "添了一台灶台。后厨现在可以站 " + game.gear.stoves + " 个人。";
     } else if (kind === "till") {
+      if (game.gear.tills >= gearRoom()) return;
       game.gear.tills += 1;
-      game.hint = "添了一台收银台。收银现在可以站 " + game.gear.tills + " 个人。";
-    } else if (kind === "table") {
-      game.gear.tables += 1;
-      game.hint = "添了一张桌子。现在 " + game.gear.tables + " 张桌子、" + seatCount() + " 个座位。";
     } else {
       return;
     }
     game.upgradeChoice = kind;
+    game.hiredTonight = null;
+    game.guide = "done";
+    game.hint = upgradeHint(kind);
     refreshTables();
     renderModal();
   }
 
   function upgradeHint(choice) {
-    if (choice === "stove") return "刚添了一台灶台。后厨现在可以站 " + game.gear.stoves + " 个人。";
-    if (choice === "till") return "刚添了一台收银台。收银现在可以站 " + game.gear.tills + " 个人。";
-    if (choice === "table") return "刚添了一张桌子，现在 " + seatCount() + " 个座位。满座时传菜会停住。";
+    if (choice === "stove") return "添了一台灶台。后厨现在可以站 " + game.gear.stoves + " 个人。人要放到后厨，多出来的灶才会一起做。";
+    if (choice === "till") return "添了一台收银台。收银现在可以站 " + game.gear.tills + " 个人。人要放到收银，多出来的台才会一起结账。";
     return "";
   }
 
@@ -1444,7 +1504,7 @@
       var posts = postsOf(staff.id);
       return staff.name + " · " + (posts.length ? posts.map(stationName).join("、") : "待命");
     }).join("　");
-    var html = "<p>" + tierLabel(shopTier()) + " · " + people + "</p>";
+    var html = "<p>" + tierLabel(shopTier()) + " · 人流" + trafficBand().name + " · " + people + "</p>";
     if (box.dataset.view !== html) {
       box.dataset.view = html;
       box.innerHTML = html;
@@ -1464,12 +1524,14 @@
   function hirePerson(id) {
     if (id === "skip") {
       game.hiredTonight = "skip";
+      game.upgradeChoice = "skip";
       game.guide = "done";
-      game.hint = "今天先不请人。";
+      game.hint = "今晚先不选。";
       renderModal();
       return;
     }
-    if (game.hiredTonight || game.hired.indexOf(id) !== -1) return;
+    if (nightPick() === "stove" || nightPick() === "till" || nightPick() === "hire") return;
+    if (game.hired.indexOf(id) !== -1) return;
     var person = staffById(id);
     if (!person) return;
     game.hired.push(id);
@@ -1514,7 +1576,10 @@
     }
     var cap = stationCap(stationId);
     if (crew.length >= cap) {
-      game.hint = stationName(stationId) + "只能站 " + cap + " 个人。先让现在的人离开。";
+      var gearName = stationId === "kitchen" ? "灶台" : stationId === "cashier" ? "收银台" : "";
+      game.hint = gearName
+        ? stationName(stationId) + "只能站 " + cap + " 个人，和" + gearName + "一样多。打烊时可以再加一台。"
+        : stationName(stationId) + "只能站 " + cap + " 个人。先让现在的人离开。";
       return false;
     }
     crew.push(staffId);
@@ -1738,7 +1803,11 @@
         tills: game.gear.tills,
         tables: game.gear.tables
       },
-      config: Object.assign({}, CONFIG, { dayDuration: shiftSeconds(shift) })
+      config: Object.assign({}, CONFIG, {
+        dayDuration: shiftSeconds(shift),
+        customerIntervalMin: trafficBand().min,
+        customerIntervalMax: trafficBand().max
+      })
     });
     game.hint = shift.name + "开门了。";
     if (game.guide === "close" || game.guide === "rush") game.guide = "watch";

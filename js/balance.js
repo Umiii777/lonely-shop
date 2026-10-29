@@ -126,7 +126,7 @@ function runInvariants() {
     config: Object.assign({}, CONFIG, { eatTime: 100, dayDuration: 40 })
   });
   assert(seats.completed === 2, "一张桌子两个座位，客人没吃完之前只能完成两单，实际 " + seats.completed);
-  assert(seats.seatDenied > 0, "座位满了之后传菜应该停住");
+  assert((seats.abandonedBy.entrance || 0) + (seats.leftBy.entrance || 0) > 0, "座位满了之后后来的人应在门口等，不能再坐进去");
   var stuck = play({
     seed: 4,
     menu: ["noodles"],
