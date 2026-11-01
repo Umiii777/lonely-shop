@@ -68,12 +68,14 @@
       startAfter: 20,
       durationMin: 12,
       durationMax: 18,
-      baseChance: 0.1,
+      baseChance: 0.06,
       badMood: "沮丧",
       badMoodMultiplier: 2,
-      soloMultiplier: 0.4,
+      soloMultiplier: 0.15,
       chanceCap: 0.35,
-      maxPerService: 1
+      maxPerService: 1,
+      // 一次掉线结束后，至少这么多模拟秒内不再检查下一次。
+      cooldown: 25
     },
     dishes: [
       { id: "friedrice", name: "炒饭", price: 96, cost: 32, cookTime: 4, weight: 50 },

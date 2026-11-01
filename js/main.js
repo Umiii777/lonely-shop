@@ -232,6 +232,46 @@
     return Infinity;
   }
 
+  var tipTimer = 0;
+
+  function showTip(text) {
+    var tip = document.getElementById("floor-tip");
+    if (!tip) return;
+    tip.textContent = text;
+    tip.hidden = false;
+    var modal = document.getElementById("modal");
+    tip.classList.toggle("is-modal", !!(modal && !modal.hidden));
+    if (tipTimer) clearTimeout(tipTimer);
+    tipTimer = setTimeout(function () {
+      tip.hidden = true;
+      tipTimer = 0;
+    }, 3200);
+  }
+
+  function singleStoveTaken(staffId) {
+    if (stationCap("kitchen") !== 1) return false;
+    var crew = crewOf("kitchen");
+    if (!crew.length) return false;
+    return crew.indexOf(staffId) === -1;
+  }
+
+  function hideTip() {
+    var tip = document.getElementById("floor-tip");
+    if (!tip) return;
+    tip.hidden = true;
+    if (tipTimer) clearTimeout(tipTimer);
+    tipTimer = 0;
+  }
+
+  function noteSingleStove(staffId) {
+    if (staffId && singleStoveTaken(staffId)) {
+      showTip("没有多余灶台");
+      return true;
+    }
+    hideTip();
+    return false;
+  }
+
   function gearNoun(stationId) {
     if (stationId === "kitchen") return "灶台";
     if (stationId === "cashier") return "收银台";
@@ -594,7 +634,7 @@
           '<div class="guests" id="guests"></div>' +
         "</div>" +
         '<div class="sky" id="sky"></div>' +
-        '<p class="outage-banner" id="outage-banner" hidden></p>' +
+        '<div class="outage-banner" id="outage-banner" hidden></div>' +
         "</div>" +
         '<aside class="panel live">' +
           '<section class="inspect" id="inspect"><p>点一个人，看他在做什么。</p></section>' +
@@ -1677,6 +1717,7 @@
     game.selectedStaffId = id;
     game.guide = "place";
     game.hint = person.name + "来了。点一个岗位。人工每天 +" + CONFIG.staffCost + " 元。";
+    noteSingleStove(id);
     if (game.run && game.run.setRoster) game.run.setRoster(rosterForSim());
     renderModal();
   }
@@ -1729,6 +1770,17 @@
     return chance;
   }
 
+  function coverCandidates(stationId, exceptId) {
+    var cap = stationCap(stationId);
+    var crew = crewOf(stationId).filter(function (id) { return id !== exceptId; });
+    if (crew.length >= cap) return [];
+    return activeRoster().filter(function (staff) {
+      if (!staff || staff.id === exceptId) return false;
+      if (crew.indexOf(staff.id) !== -1) return false;
+      return true;
+    });
+  }
+
   function dropMood(staffId) {
     var face = personaOf(staffId);
     var ladder = CONFIG.moods || [];
@@ -1759,6 +1811,9 @@
     if (game.run && game.run.setRoster) game.run.setRoster(rosterForSim());
     game.hint = ev.name + " 已恢复";
     applyLiveAssignment();
+    var cooled = game.run && game.run.getState ? game.run.getState().time : 0;
+    var gap = (CONFIG.outage && CONFIG.outage.cooldown) || 25;
+    game.outage.nextCheck = Math.max(game.outage.nextCheck || 0, cooled + gap);
     rememberOutage(ev);
     game.outage.notice = ev.name + " 已恢复";
     game.outage.noticeUntil = performance.now() + 3200;
@@ -1800,8 +1855,11 @@
         working.push({ staffId: member.staffId, stationId: station.id });
       });
     });
-    if (!working.length) return false;
-    var pick = working[Math.floor(Math.random() * working.length)];
+    var eligible = working.filter(function (member) {
+      return coverCandidates(member.stationId, member.staffId).length > 0;
+    });
+    if (!eligible.length) return false;
+    var pick = eligible[Math.floor(Math.random() * eligible.length)];
     if (Math.random() >= outageChance(pick.staffId)) return false;
     var span = Math.max(0, cfg.durationMax - cfg.durationMin);
     var duration = cfg.durationMin + Math.random() * span;
@@ -1840,22 +1898,35 @@
     var banner = document.getElementById("outage-banner");
     if (!banner) return;
     var active = game.outage.active;
+    var html = "";
+    var cls = "outage-banner";
     if (active) {
-      banner.hidden = false;
-      banner.className = "outage-banner";
-      banner.textContent = active.covered
+      var text = active.covered
         ? active.name + " 暂时无法工作。" + (active.coverName || "有人") + "已顶上" + active.stationName + "。"
-        : active.name + " 暂时无法工作，请调人顶上";
+        : active.name + " 暂时无法工作，请调人";
+      var buttons = "";
+      if (!active.covered) {
+        buttons = coverCandidates(active.stationId, active.staffId).map(function (staff) {
+          return '<button type="button" data-cover="' + staff.id + '">让' + escapeHtml(staff.name) + "去" + escapeHtml(active.stationName) + "</button>";
+        }).join("");
+      }
+      html = "<strong>" + escapeHtml(text) + "</strong>" + (buttons ? '<span class="outage-actions">' + buttons + "</span>" : "");
+    } else if (game.outage.notice && performance.now() < game.outage.noticeUntil) {
+      cls = "outage-banner is-ok";
+      html = "<strong>" + escapeHtml(game.outage.notice) + "</strong>";
+    }
+    if (!html) {
+      banner.hidden = true;
+      if (banner.dataset.view) banner.dataset.view = "";
+      game.outage.notice = game.outage.notice && performance.now() < game.outage.noticeUntil ? game.outage.notice : "";
       return;
     }
-    if (game.outage.notice && performance.now() < game.outage.noticeUntil) {
-      banner.hidden = false;
-      banner.className = "outage-banner is-ok";
-      banner.textContent = game.outage.notice;
-      return;
+    banner.hidden = false;
+    banner.className = cls;
+    if (banner.dataset.view !== html) {
+      banner.dataset.view = html;
+      banner.innerHTML = html;
     }
-    banner.hidden = true;
-    game.outage.notice = "";
   }
 
   function outageReportLine(report) {
@@ -1892,6 +1963,11 @@
     }
     var cap = stationCap(stationId);
     if (crew.length >= cap) {
+      if (stationId === "kitchen" && cap === 1) {
+        game.hint = "没有多余灶台";
+        showTip("没有多余灶台");
+        return false;
+      }
       var gearName = stationId === "kitchen" ? "灶台" : stationId === "cashier" ? "收银台" : "";
       game.hint = gearName
         ? stationName(stationId) + "只能站 " + cap + " 个人，和" + gearName + "一样多。打烊时可以再加一台。"
@@ -2267,7 +2343,11 @@
         return;
       }
       game.selectedStaffId = game.selectedStaffId === id ? null : id;
-      game.hint = game.selectedStaffId ? "再点击一个岗位。" : "已取消选择。";
+      if (noteSingleStove(game.selectedStaffId)) {
+        game.hint = "没有多余灶台";
+      } else {
+        game.hint = game.selectedStaffId ? "再点击一个岗位。" : "已取消选择。";
+      }
       renderModal();
       return;
     }
@@ -2326,13 +2406,14 @@
     game.inspect = next;
     if (next.kind !== "staff") return;
     game.selectedStaffId = next.staffId;
+    noteSingleStove(next.staffId);
     if (game.guide === "watch") game.guide = "panel";
     var whoStaff = staffById(next.staffId);
     var whoName = whoStaff ? whoStaff.name : "这位";
     if (game.outage.active && game.outage.active.staffId === next.staffId) {
-      game.hint = whoName + " 暂时无法工作。点另一名员工，再点空出的" + game.outage.active.stationName + "。";
+      game.hint = whoName + " 暂时无法工作。用上方的按钮调人，或点另一名员工再点空出的" + game.outage.active.stationName + "。";
     } else if (game.outage.active && !game.outage.active.covered) {
-      game.hint = whoName + " 已选中。再点空出的" + game.outage.active.stationName + "。";
+      game.hint = whoName + " 已选中。再点空出的" + game.outage.active.stationName + "，或直接点上方的调人按钮。";
     } else {
       game.hint = whoName + " 已选中。可以让他去别的岗位一起做，或离开这里。";
     }
@@ -2345,6 +2426,12 @@
         closeInspect();
         updateSim();
       }
+      return;
+    }
+    var coverBtn = event.target.closest("[data-cover]");
+    if (coverBtn && game.outage.active && !game.outage.active.covered) {
+      moveStaffTo(coverBtn.getAttribute("data-cover"), game.outage.active.stationId);
+      updateSim();
       return;
     }
     if (event.target.closest("[data-hire]")) {

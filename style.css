@@ -203,6 +203,34 @@ h2 { font-size: 16px; }
 
 .hint.is-warn { color: #9a3412; }
 
+.floor-tip {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  top: 22%;
+  transform: translate(-50%, -50%);
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
+  padding: 14px 22px;
+  background: #fffaf2;
+  color: #7a241c;
+  border: 3px solid #1b1916;
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 #1b1916;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: center;
+  pointer-events: none;
+}
+
+.floor-tip[hidden] { display: none !important; }
+
+.floor-tip.is-modal {
+  top: 52px;
+  transform: translate(-50%, 0);
+}
+
 .primary {
   background: #1b1916;
   color: #fbf8f2;
@@ -376,51 +404,86 @@ h2 { font-size: 16px; }
 .zone.is-stuck { box-shadow: inset 0 0 0 4px #a33b32; }
 
 .zone.is-outage {
-  z-index: 8;
-  background: rgba(196, 56, 43, 0.62);
-  box-shadow: inset 0 0 0 5px #c4382b;
+  z-index: 4;
+  background: rgba(196, 56, 43, 0.72);
+  box-shadow: inset 0 0 0 6px #c4382b;
   border-radius: 12px;
   cursor: pointer;
+  animation: outage-zone 0.85s ease-in-out infinite;
+}
+
+@keyframes outage-zone {
+  50% {
+    background: rgba(255, 64, 48, 0.9);
+    box-shadow: inset 0 0 0 10px #ff2a1a;
+  }
 }
 
 .outage-tag {
   position: absolute;
-  top: 22px;
+  top: 26px;
   left: 8px;
   z-index: 6;
   margin: 0;
-  padding: 3px 8px;
+  padding: 6px 12px;
   background: #c4382b;
   color: #fff;
-  border: 2px solid #1b1916;
+  border: 3px solid #1b1916;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 20px;
   font-weight: 800;
   line-height: 1.2;
   pointer-events: none;
+  box-shadow: 3px 3px 0 #1b1916;
 }
 
 .outage-tag[hidden] { display: none !important; }
 
 .outage-banner {
-  position: absolute;
-  z-index: 9;
+  position: fixed;
+  z-index: 35;
   left: 50%;
-  top: 8px;
+  top: 10px;
   transform: translateX(-50%);
-  max-width: 92%;
+  width: min(520px, calc(100vw - 20px));
   margin: 0;
-  padding: 8px 14px;
+  padding: 12px 14px 14px;
   background: #c4382b;
   color: #fff;
   border: 3px solid #1b1916;
+  border-radius: 16px;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: center;
+  box-shadow: 4px 4px 0 #1b1916;
+  pointer-events: auto;
+}
+
+.outage-banner strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.outage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.outage-actions button {
+  padding: 8px 12px;
+  background: #fffaf2;
+  color: #7a241c;
+  border: 2px solid #1b1916;
   border-radius: 999px;
   font-size: 16px;
   font-weight: 800;
-  line-height: 1.35;
-  text-align: center;
-  box-shadow: 3px 3px 0 #1b1916;
-  pointer-events: none;
+  line-height: 1.2;
+  box-shadow: 2px 2px 0 #1b1916;
 }
 
 .outage-banner[hidden] { display: none !important; }
@@ -1067,8 +1130,16 @@ button.worker {
 
 .worker.is-down .face { box-shadow: inset 0 -5px 0 #8eb4e0; }
 .worker.is-up .face { box-shadow: inset 0 -5px 0 #8dce7a; }
+.worker.is-out {
+  z-index: 12;
+  animation: outage-worker 0.85s ease-in-out infinite;
+}
 .worker.is-out .face {
-  box-shadow: 0 0 0 3px #fff, 0 0 0 6px #c4382b;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 7px #c4382b;
+}
+@keyframes outage-worker {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.16); }
 }
 
 .task[hidden],
@@ -1166,8 +1237,9 @@ button.worker {
 .worker.is-out .mood-flag {
   background: #c4382b;
   color: #fff;
-  font-size: 13px;
-  padding: 3px 8px;
+  font-size: 16px;
+  padding: 4px 10px;
+  box-shadow: 0 0 0 3px #fff, 3px 3px 0 #1b1916;
 }
 
 .inspect {
