@@ -43,7 +43,16 @@
     }),
     dayParts: [],
     modal: null,
-    ffTarget: null
+    ffTarget: null,
+    outage: {
+      nextCheck: 0,
+      fired: false,
+      active: null,
+      notice: "",
+      noticeUntil: 0,
+      count: 0,
+      day: []
+    }
   };
 
   var configScreen = document.getElementById("screen-config");
@@ -565,14 +574,16 @@
             '<div class="stove"><div class="gear-row" id="stove-row"></div><span class="stove-art" id="stove-art"></span><span class="meter"><i id="stove-fill"></i></span><em id="stove-label">空闲</em></div>' +
             '<div class="fridge"></div>' +
             '<p class="zone-status" id="status-kitchen"></p>' +
+            '<p class="outage-tag" hidden>请调人</p>' +
           "</section>" +
           '<section class="zone cashier" id="zone-cashier">' +
             '<h2>收银台</h2>' +
             '<div class="jam" id="jam-cashier" hidden></div>' +
             '<div class="counter"><div class="gear-row" id="till-row"></div><span class="meter"><i id="till-fill"></i></span><em id="till-label">空闲</em></div>' +
             '<p class="zone-status" id="status-cashier"></p>' +
+            '<p class="outage-tag" hidden>请调人</p>' +
           "</section>" +
-          '<section class="zone dining" id="zone-dining"><p class="seat-note" id="seat-note"></p><div class="jam jam-serve" id="jam-serve" hidden></div><div class="plant"></div></section>' +
+          '<section class="zone dining" id="zone-dining"><p class="seat-note" id="seat-note"></p><div class="jam jam-serve" id="jam-serve" hidden></div><p class="outage-tag" hidden>请调人</p><div class="plant"></div></section>' +
           stools +
           '<div class="entrance"><span>门口</span><p id="door-note">客人即将进门</p></div>' +
           '<div class="sidewalk" aria-hidden="true"></div>' +
@@ -583,6 +594,7 @@
           '<div class="guests" id="guests"></div>' +
         "</div>" +
         '<div class="sky" id="sky"></div>' +
+        '<p class="outage-banner" id="outage-banner" hidden></p>' +
         "</div>" +
         '<aside class="panel live">' +
           '<section class="inspect" id="inspect"><p>点一个人，看他在做什么。</p></section>' +
@@ -803,15 +815,20 @@
       el.dataset.station = stationId;
       var picked = game.inspect && game.inspect.kind === "staff" && game.inspect.staffId === staff.id;
       var mood = personaOf(staff.id).mood;
-      var busy = !!(member && member.busy && member.dishId);
+      var down = !!(game.outage.active && game.outage.active.staffId === staff.id);
+      var busy = !!(member && member.busy && member.dishId) && !down;
       el.className = "worker " + staffKind(staff.id) +
         (picked ? " is-picked" : "") +
         (busy ? " is-busy" : "") +
+        (down ? " is-out" : "") +
         (mood === "沮丧" ? " is-down" : mood === "开心" ? " is-up" : "");
       el.querySelector("em").textContent = staff.name;
       var flag = el.querySelector(".mood-flag");
       if (flag) {
-        if (mood === "沮丧") {
+        if (down) {
+          flag.hidden = false;
+          flag.textContent = "无法工作";
+        } else if (mood === "沮丧") {
           flag.hidden = false;
           flag.textContent = staff.name + "状态不佳";
         } else if (mood === "开心") {
@@ -849,7 +866,7 @@
       el.style.left = body.x + "%";
       el.style.top = body.y + "%";
       var tray = el.querySelector(".tray");
-      if (stationId === "serve" && member && member.dishId) {
+      if (!down && stationId === "serve" && member && member.dishId) {
         tray.hidden = false;
         if (tray.dataset.dish !== member.dishId) {
           tray.dataset.dish = member.dishId;
@@ -1098,6 +1115,10 @@
       cashierZone.classList.toggle("is-stuck", !cashier.staffIds || !cashier.staffIds.length);
     }
     if (dining) dining.classList.toggle("is-jam", serve.queueLength > 2);
+    markOutageZone(kitchenZone, "kitchen");
+    markOutageZone(cashierZone, "cashier");
+    markOutageZone(dining, "serve");
+    paintOutageBanner();
     paintJam("jam-kitchen", kitchen);
     paintJam("jam-cashier", cashier);
     paintJam("jam-serve", serve);
@@ -1323,9 +1344,12 @@
     var station = focus;
     var matched = staff.specialty === "any" || (station && staff.specialty === station.id);
     var where = posts.length ? posts.map(stationName).join("、") : "待命";
-    var doing = posts.length ? "现在负责" + where + "。同一时间只能做一件。" : "还在待命。点一个岗位，他就会过去。";
+    var downStaff = !!(game.outage.active && game.outage.active.staffId === staffId);
+    var doing = downStaff
+      ? "暂时无法工作。"
+      : posts.length ? "现在负责" + where + "。同一时间只能做一件。" : "还在待命。点一个岗位，他就会过去。";
     var art = "";
-    if (member && member.busy && station && station.id === "kitchen") {
+    if (!downStaff && member && member.busy && station && station.id === "kitchen") {
       doing = "正在做" + member.dishName + "，完成了 " + Math.round(member.progress * 100) + "%。";
       art = dishArt(member.dishId);
     } else if (member && member.busy && station && station.id === "cashier") {
@@ -1335,10 +1359,12 @@
       doing = "正在把" + member.dishName + "端上桌，走到 " + Math.round(member.progress * 100) + "%。";
       art = dishArt(member.dishId);
     }
-    var moves = STATIONS.map(function (item) {
-      if (posts.indexOf(item.id) !== -1) return '<button type="button" data-leave-post="' + item.id + '">离开' + item.name + "</button>";
-      return '<button type="button" data-move="' + item.id + '">也去' + item.name + "</button>";
-    }).join("");
+    var moves = downStaff
+      ? ""
+      : STATIONS.map(function (item) {
+        if (posts.indexOf(item.id) !== -1) return '<button type="button" data-leave-post="' + item.id + '">离开' + item.name + "</button>";
+        return '<button type="button" data-move="' + item.id + '">也去' + item.name + "</button>";
+      }).join("");
     var moodMul = moodFactorOf(face.mood);
     var personal = staff.efficiency * (matched ? (1 + staff.bonus) : 1) * moodMul;
     var shown = formatMul(personal);
@@ -1439,6 +1465,7 @@
       "</div>" +
       '<p class="report-line">目标 ' + money(CONFIG.goalCash) + " · 完成 " + report.completed + " · 流失 " + report.left + " · 人工 " + money(report.staffCost) + "</p>" +
       (note && !game.outcome ? '<p class="report-line">' + escapeHtml(note) + "</p>" : "") +
+      outageReportLine(report) +
       (game.outcome ? "" : nightChoicePanel()) +
       '<footer class="action-bar">' + actions + "</footer>"
     );
@@ -1656,12 +1683,190 @@
 
   function moveStaffTo(staffId, stationId) {
     if (!staffId || !staffById(staffId)) return false;
+    var active = game.outage.active;
+    if (active && active.staffId === staffId) {
+      game.selectedStaffId = null;
+      game.hint = staffById(staffId).name + " 暂时无法工作。点另一名员工，再点空出的岗位。";
+      return false;
+    }
     game.selectedStaffId = staffId;
+    if (active && stationId === active.stationId && crewOf(stationId).indexOf(staffId) !== -1) {
+      noteCover(staffId, stationId);
+      return true;
+    }
     var moved = assignSelected(stationId);
-    if (moved) applyLiveAssignment();
+    if (moved) {
+      if (active && stationId === active.stationId && crewOf(stationId).indexOf(staffId) !== -1) {
+        active.covered = true;
+        active.coverName = staffById(staffId).name;
+        game.hint = active.coverName + " 顶上了" + stationName(stationId) + "。";
+      }
+      applyLiveAssignment();
+      if (active && active.covered && stationId === active.stationId && game.run && game.run.cover) {
+        game.run.cover(staffId, stationId);
+      }
+    }
     var now = stationOf(staffId);
     game.inspect = { kind: "staff", station: now, staffId: staffId };
     return moved;
+  }
+
+  function noteCover(staffId, stationId) {
+    var active = game.outage.active;
+    if (!active || active.stationId !== stationId || staffId === active.staffId) return;
+    active.covered = true;
+    active.coverName = staffById(staffId).name;
+    game.hint = active.coverName + " 已在" + stationName(stationId) + "。";
+    if (game.run && game.run.cover) game.run.cover(staffId, stationId);
+  }
+
+  function outageChance(staffId) {
+    var cfg = CONFIG.outage;
+    var chance = cfg.baseChance;
+    if (personaOf(staffId).mood === cfg.badMood) chance *= cfg.badMoodMultiplier;
+    if (activeRoster().length <= 1) chance *= cfg.soloMultiplier;
+    if (chance > cfg.chanceCap) chance = cfg.chanceCap;
+    return chance;
+  }
+
+  function dropMood(staffId) {
+    var face = personaOf(staffId);
+    var ladder = CONFIG.moods || [];
+    var index = ladder.indexOf(face.mood);
+    if (index >= 0 && index < ladder.length - 1) face.mood = ladder[index + 1];
+  }
+
+  function rememberOutage(ev) {
+    game.outage.day.push({
+      staffId: ev.staffId,
+      name: ev.name,
+      stationId: ev.stationId,
+      stationName: ev.stationName,
+      shiftName: ev.shiftName || "",
+      covered: !!ev.covered,
+      coverName: ev.coverName || ""
+    });
+  }
+
+  function finishOutage() {
+    var ev = game.outage.active;
+    if (!ev) return;
+    game.outage.active = null;
+    var crew = ensureCrew(ev.stationId);
+    if (crew.indexOf(ev.staffId) === -1 && crew.length < stationCap(ev.stationId)) crew.push(ev.staffId);
+    if (game.run && game.run.setDown) game.run.setDown(null);
+    dropMood(ev.staffId);
+    if (game.run && game.run.setRoster) game.run.setRoster(rosterForSim());
+    game.hint = ev.name + " 已恢复";
+    applyLiveAssignment();
+    rememberOutage(ev);
+    game.outage.notice = ev.name + " 已恢复";
+    game.outage.noticeUntil = performance.now() + 3200;
+  }
+
+  function startOutage(pick, until) {
+    var person = staffById(pick.staffId);
+    var name = person ? person.name : pick.staffId;
+    if (game.guide === "watch" || game.guide === "panel") game.guide = "done";
+    game.outage.count = (game.outage.count || 0) + 1;
+    game.outage.fired = game.outage.count >= ((CONFIG.outage && CONFIG.outage.maxPerService) || 1);
+    game.outage.active = {
+      staffId: pick.staffId,
+      name: name,
+      stationId: pick.stationId,
+      stationName: stationName(pick.stationId),
+      until: until,
+      covered: false,
+      coverName: "",
+      shiftName: (game.shifts[game.shiftIndex] && game.shifts[game.shiftIndex].name) || ""
+    };
+    var crew = ensureCrew(pick.stationId);
+    var index = crew.indexOf(pick.staffId);
+    if (index !== -1) crew.splice(index, 1);
+    if (game.selectedStaffId === pick.staffId) game.selectedStaffId = null;
+    game.hint = name + " 暂时无法工作，请调人顶上。";
+    applyLiveAssignment();
+    if (game.run && game.run.setDown) game.run.setDown(pick.staffId);
+  }
+
+  function tryTriggerOutage() {
+    var cfg = CONFIG.outage;
+    if (!cfg || game.outage.fired || game.outage.active || !game.run) return false;
+    var state = game.run.getState();
+    var working = [];
+    state.stations.forEach(function (station) {
+      (station.crew || []).forEach(function (member) {
+        if (!member.busy) return;
+        working.push({ staffId: member.staffId, stationId: station.id });
+      });
+    });
+    if (!working.length) return false;
+    var pick = working[Math.floor(Math.random() * working.length)];
+    if (Math.random() >= outageChance(pick.staffId)) return false;
+    var span = Math.max(0, cfg.durationMax - cfg.durationMin);
+    var duration = cfg.durationMin + Math.random() * span;
+    startOutage(pick, state.time + duration);
+    return true;
+  }
+
+  function tickOutage() {
+    var cfg = CONFIG.outage;
+    if (!cfg || game.service !== "open" || !game.run) return;
+    var time = game.run.getState().time;
+    if (game.outage.active && time >= game.outage.active.until) finishOutage();
+    if (game.outage.fired || game.outage.active) return;
+    var guard = 0;
+    while (time + 1e-6 >= game.outage.nextCheck && guard < 8) {
+      guard += 1;
+      var checkAt = game.outage.nextCheck;
+      game.outage.nextCheck += cfg.checkEvery;
+      if (checkAt + 1e-6 < cfg.startAfter) continue;
+      if (tryTriggerOutage()) break;
+    }
+  }
+
+  function markOutageZone(zone, stationId) {
+    if (!zone) return;
+    var active = game.outage.active;
+    var on = !!(active && active.stationId === stationId && !active.covered);
+    zone.classList.toggle("is-outage", on);
+    if (on) zone.setAttribute("data-shift-post", stationId);
+    else zone.removeAttribute("data-shift-post");
+    var tag = zone.querySelector(".outage-tag");
+    if (tag) tag.hidden = !on;
+  }
+
+  function paintOutageBanner() {
+    var banner = document.getElementById("outage-banner");
+    if (!banner) return;
+    var active = game.outage.active;
+    if (active) {
+      banner.hidden = false;
+      banner.className = "outage-banner";
+      banner.textContent = active.covered
+        ? active.name + " 暂时无法工作。" + (active.coverName || "有人") + "已顶上" + active.stationName + "。"
+        : active.name + " 暂时无法工作，请调人顶上";
+      return;
+    }
+    if (game.outage.notice && performance.now() < game.outage.noticeUntil) {
+      banner.hidden = false;
+      banner.className = "outage-banner is-ok";
+      banner.textContent = game.outage.notice;
+      return;
+    }
+    banner.hidden = true;
+    game.outage.notice = "";
+  }
+
+  function outageReportLine(report) {
+    var list = report.outages || [];
+    return list.map(function (item) {
+      var where = item.shiftName ? "本轮发生员工掉线（" + item.shiftName + "）" : "本轮发生员工掉线";
+      var tail = item.covered
+        ? (item.coverName ? item.coverName + "及时顶上" : "有人及时顶上")
+        : "没有人及时顶上";
+      return '<p class="report-line">' + escapeHtml(where) + "：" + escapeHtml(item.name) + " 暂时无法工作，" + escapeHtml(tail) + "。</p>";
+    }).join("");
   }
 
   function assignSelected(stationId) {
@@ -1899,6 +2104,11 @@
     game.closing = false;
     game.inspect = null;
     game.simKey = "";
+    game.outage.active = null;
+    game.outage.fired = false;
+    game.outage.count = 0;
+    game.outage.nextCheck = (CONFIG.outage && CONFIG.outage.startAfter) || 20;
+    game.outage.notice = "";
     hideModal();
     game.run = createRun({
       seed: nextSeed(),
@@ -1944,6 +2154,15 @@
     }], game.lastReport);
     if (early) merged.endedEarly = true;
     game.cash += merged.profit;
+    merged.outages = (game.outage.day || []).map(function (item) {
+      return {
+        name: item.name,
+        stationName: item.stationName,
+        shiftName: item.shiftName || "",
+        covered: !!item.covered,
+        coverName: item.coverName || ""
+      };
+    });
     game.lastReport = merged;
     if (game.round >= CONFIG.goalDays) {
       game.outcome = game.cash >= CONFIG.goalCash ? "win" : "lose";
@@ -1968,6 +2187,7 @@
 
   function endShift(early) {
     if (!game.run || game.closing) return;
+    finishOutage();
     game.closing = true;
     if (!game.run.isOver()) game.run.endNow();
     var part = game.run.buildReport(null);
@@ -1997,6 +2217,9 @@
     game.upgradeChoice = null;
     game.guide = "done";
     rollMoods();
+    game.outage.day = [];
+    game.outage.active = null;
+    game.outage.notice = "";
     applyTier();
     renderChrome();
   }
@@ -2105,12 +2328,19 @@
     game.selectedStaffId = next.staffId;
     if (game.guide === "watch") game.guide = "panel";
     var whoStaff = staffById(next.staffId);
-    game.hint = (whoStaff ? whoStaff.name : "这位") + " 已选中。可以让他去别的岗位一起做，或离开这里。";
+    var whoName = whoStaff ? whoStaff.name : "这位";
+    if (game.outage.active && game.outage.active.staffId === next.staffId) {
+      game.hint = whoName + " 暂时无法工作。点另一名员工，再点空出的" + game.outage.active.stationName + "。";
+    } else if (game.outage.active && !game.outage.active.covered) {
+      game.hint = whoName + " 已选中。再点空出的" + game.outage.active.stationName + "。";
+    } else {
+      game.hint = whoName + " 已选中。可以让他去别的岗位一起做，或离开这里。";
+    }
   }
 
   simScreen.addEventListener("click", function (event) {
     if (game.phase !== "sim") return;
-    if (game.guide === "panel") {
+    if (game.guide === "panel" && !(game.outage && game.outage.active)) {
       if (event.target.closest("#inspect-close")) {
         closeInspect();
         updateSim();
@@ -2244,6 +2474,7 @@
         guard += 1;
         if (game.run.isOver()) break;
       }
+      tickOutage();
       if (game.run.isOver()) endShift(false);
     } else if (game.service !== "open" && !game.night && !game.modal && !game.paused && game.guide !== "rush" && game.guide !== "goal" && game.shiftIndex < game.shifts.length) {
       var dest = game.shifts[game.shiftIndex].start;

@@ -62,6 +62,19 @@
     moods: ["开心", "平常", "沮丧"],
     // 乘在岗位效率上。开心 +0.1，沮丧降到 0.9，平常不变。每天开始时重抽。
     moodFactor: { "开心": 1.1, "平常": 1, "沮丧": 0.9 },
+    // 营业中员工掉线。时间用模拟秒，1× 时约等于真实秒。心情「不佳」对应沮丧。
+    outage: {
+      checkEvery: 1.5,
+      startAfter: 20,
+      durationMin: 12,
+      durationMax: 18,
+      baseChance: 0.1,
+      badMood: "沮丧",
+      badMoodMultiplier: 2,
+      soloMultiplier: 0.4,
+      chanceCap: 0.35,
+      maxPerService: 1
+    },
     dishes: [
       { id: "friedrice", name: "炒饭", price: 96, cost: 32, cookTime: 4, weight: 50 },
       { id: "noodles", name: "面条", price: 80, cost: 24, cookTime: 3, weight: 35 },

@@ -375,6 +375,58 @@ h2 { font-size: 16px; }
 .zone.is-hot { box-shadow: inset 0 0 0 4px #e25b2a; }
 .zone.is-stuck { box-shadow: inset 0 0 0 4px #a33b32; }
 
+.zone.is-outage {
+  z-index: 8;
+  background: rgba(196, 56, 43, 0.62);
+  box-shadow: inset 0 0 0 5px #c4382b;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.outage-tag {
+  position: absolute;
+  top: 22px;
+  left: 8px;
+  z-index: 6;
+  margin: 0;
+  padding: 3px 8px;
+  background: #c4382b;
+  color: #fff;
+  border: 2px solid #1b1916;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.outage-tag[hidden] { display: none !important; }
+
+.outage-banner {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  max-width: 92%;
+  margin: 0;
+  padding: 8px 14px;
+  background: #c4382b;
+  color: #fff;
+  border: 3px solid #1b1916;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 3px 3px 0 #1b1916;
+  pointer-events: none;
+}
+
+.outage-banner[hidden] { display: none !important; }
+
+.outage-banner.is-ok { background: #2f6f4e; }
+
 .zone.is-jam {
   background: rgba(196, 56, 43, 0.55);
   box-shadow: inset 0 0 0 5px #c4382b;
@@ -1015,6 +1067,9 @@ button.worker {
 
 .worker.is-down .face { box-shadow: inset 0 -5px 0 #8eb4e0; }
 .worker.is-up .face { box-shadow: inset 0 -5px 0 #8dce7a; }
+.worker.is-out .face {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 6px #c4382b;
+}
 
 .task[hidden],
 .mood-flag[hidden],
@@ -1106,6 +1161,13 @@ button.worker {
 .worker.is-up .mood-flag {
   background: #d7efc4;
   color: #1e5c32;
+}
+
+.worker.is-out .mood-flag {
+  background: #c4382b;
+  color: #fff;
+  font-size: 13px;
+  padding: 3px 8px;
 }
 
 .inspect {

@@ -90,6 +90,9 @@
       };
     });
 
+    var downId = null;
+    var prefer = null;
+
     var run = {
       config: config,
       time: 0,
@@ -446,6 +449,13 @@
       });
       // 同一个人可以同时挂在几个岗位上，但手上只能有一单。先接传菜，再收银，再后厨，
       // 一个人包三岗时单子才走得完。每个岗位是不同的人时，这个顺序不改变结果。
+      // 顶岗时先接空出来的那个岗位，让刚调过去的人马上开始。
+      var order = ["serve", "cashier", "kitchen"];
+      if (prefer && order.indexOf(prefer.stationId) !== -1) {
+        order = [prefer.stationId].concat(order.filter(function (id) {
+          return id !== prefer.stationId;
+        }));
+      }
       function postCount(staffId) {
         var count = 0;
         STATION_ORDER.forEach(function (sid) {
@@ -453,7 +463,7 @@
         });
         return count || 1;
       }
-      ["serve", "cashier", "kitchen"].forEach(function (id) {
+      order.forEach(function (id) {
         var station = stations[id];
         if (!station.slots.length) return;
         var ordered = station.slots.slice().sort(function (a, b) {
@@ -463,6 +473,7 @@
         });
         ordered.forEach(function (slot) {
           if (slot.current || !station.queue.length) return;
+          if (downId && slot.staffId === downId) return;
           if (busy[slot.staffId]) return;
           if (efficiencyOfStaff(slot.staffId, id) <= 0) return;
           var customer = station.queue[0];
@@ -502,6 +513,7 @@
         var station = stations[id];
         station.slots.forEach(function (slot) {
           if (!slot.current) return;
+          if (downId && slot.staffId === downId) return;
           var remaining = slot.current.remaining;
           var worked = Math.min(dt, remaining);
           slot.current.remaining = remaining - worked;
@@ -539,8 +551,39 @@
       });
     }
 
+    function releaseStaff(staffId) {
+      STATION_ORDER.forEach(function (id) {
+        var station = stations[id];
+        station.slots.forEach(function (slot) {
+          if (slot.staffId !== staffId || !slot.current) return;
+          if (slot.current.customer.status === "active") {
+            var job = slot.current;
+            job.customer.workedFraction = job.duration > 0 ? Math.min(1, 1 - job.remaining / job.duration) : 0;
+            job.customer.phase = "queue";
+            job.customer.queueWaitSaved = true;
+            job.customer.station = id;
+            station.queue.unshift(job.customer);
+          }
+          slot.current = null;
+        });
+      });
+    }
+
     run.setRoster = function (list) {
       indexRoster(list || []);
+    };
+
+    run.setDown = function (staffId) {
+      downId = staffId || null;
+      if (downId) releaseStaff(downId);
+    };
+
+    run.cover = function (staffId, stationId) {
+      if (!staffId || !stationId) return;
+      releaseStaff(staffId);
+      prefer = { staffId: staffId, stationId: stationId };
+      pickup();
+      prefer = null;
     };
 
     run.setAssignment = function (next) {
