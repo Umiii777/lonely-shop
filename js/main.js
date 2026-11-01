@@ -807,16 +807,95 @@
     return station.staffName + " · " + station.crew.length + " 人 · " + queueWord + " " + station.queueLength;
   }
 
-  function crewSpot(stationId, member) {
+  function workStepsOf(stationId) {
+    var table = CONFIG.workSteps && CONFIG.workSteps[stationId];
+    return table && table.length ? table : [{ id: "work", label: "工作中", seconds: 1, progress: true }];
+  }
+
+  function workStep(stationId, progress, dish) {
+    var steps = workStepsOf(stationId);
+    var total = 0;
+    steps.forEach(function (step) { total += step.seconds > 0 ? step.seconds : 0; });
+    if (total <= 0) total = 1;
+    var t = Math.max(0, Math.min(0.999, progress || 0));
+    var cursor = 0;
+    var found = steps[steps.length - 1];
+    var local = 1;
+    var i;
+    for (i = 0; i < steps.length; i++) {
+      var span = (steps[i].seconds > 0 ? steps[i].seconds : 0) / total;
+      if (t < cursor + span || i === steps.length - 1) {
+        found = steps[i];
+        local = span > 0 ? (t - cursor) / span : 1;
+        break;
+      }
+      cursor += span;
+    }
+    local = Math.max(0, Math.min(1, local));
+    var label = found.label;
+    if (found.useDish) label = "正在" + ((dish && (dish.cookLabel || dish.name)) || "制作");
+    var pct = Math.round(local * 100);
+    return {
+      id: found.id,
+      label: label,
+      text: found.progress ? label + " " + pct + "%" : label,
+      local: local,
+      progress: !!found.progress
+    };
+  }
+
+  function stepSentence(stationId, member) {
+    var dish = dishById(member.dishId);
+    var step = workStep(stationId, member.progress || 0, dish);
+    var dishName = dish ? dish.name : "这单";
+    var pct = Math.round(step.local * 100);
+    if (stationId === "kitchen" && step.id === "walk") return "正在走向灶台。";
+    if (stationId === "kitchen" && step.id === "prep") return "正在准备食材。";
+    if (stationId === "kitchen" && step.id === "cook") return step.label + "，这步完成了 " + pct + "%。";
+    if (stationId === "kitchen" && step.id === "plate") return "正在装盘。";
+    if (stationId === "kitchen" && step.id === "handoff") return "正在把" + dishName + "交给传菜。";
+    if (stationId === "cashier" && step.id === "walk") return "正在走向柜台。";
+    if (stationId === "cashier" && step.id === "pay") return "正在给" + dishName + "结账，这步完成了 " + pct + "%。";
+    if (stationId === "serve" && step.id === "walk") return "正在走向顾客，去送" + dishName + "。";
+    if (stationId === "serve" && step.id === "deliver") return "正在上" + dishName + "，这步完成了 " + pct + "%。";
+    return step.progress ? step.label + "，这步完成了 " + pct + "%。" : "正在" + step.label + "。";
+  }
+
+  function stationStepText(station) {
+    var lines = [];
+    (station.crew || []).forEach(function (member) {
+      if (!member.busy || !member.dishId) return;
+      lines.push(workStep(station.id, member.progress || 0, dishById(member.dishId)).text);
+    });
+    return lines.join("、");
+  }
+
+  function crewSpot(stationId, member, step) {
     var homes = CREW_HOME[stationId] || CREW_HOME.serve;
     var home = homes[member.index % homes.length];
+    if (stationId === "kitchen" && step) {
+      if (step.id === "walk") {
+        return {
+          x: 48 + (home.x - 48) * step.local,
+          y: 40 + (home.y - 40) * step.local
+        };
+      }
+      if (step.id === "handoff") return { x: (home.x + 50) / 2, y: (home.y + 40) / 2 };
+      return home;
+    }
+    if (stationId === "cashier" && step && step.id === "walk") {
+      return {
+        x: home.x - 6 + 6 * step.local,
+        y: home.y + 10 - 10 * step.local
+      };
+    }
     if (stationId === "serve" && member.busy && member.table != null) {
       var seat = seatPos(member.table, member.seat || 0);
-      var t = Math.max(0, Math.min(1, member.progress || 0));
+      var along = step && step.id === "walk" ? step.local : 1;
       var meetY = Math.min(seat.y - 2, home.y + 2);
       return {
-        x: home.x + (seat.x - home.x) * t,
-        y: home.y + (meetY - home.y) * t
+        x: home.x + (seat.x - home.x) * along,
+        y: home.y + (meetY - home.y) * along
       };
     }
     return home;
@@ -878,14 +957,17 @@
           flag.hidden = true;
         }
       }
+      var dish = member && member.dishId ? dishById(member.dishId) : null;
+      var step = busy ? workStep(stationId, member.progress || 0, dish) : null;
       var task = el.querySelector(".task");
       if (task) {
-        if (busy) {
+        if (step) {
           task.hidden = false;
-          var pct = Math.max(0, Math.min(100, Math.round((member.progress || 0) * 100)));
-          var verb = stationId === "kitchen" ? "正在" + member.dishName : stationId === "cashier" ? "正在结账" : "正在传菜";
-          task.querySelector("b").textContent = verb + " " + pct + "%";
-          task.querySelector("s i").style.width = pct + "%";
+          task.classList.toggle("is-plain", !step.progress);
+          task.querySelector("b").textContent = step.text;
+          var meter = task.querySelector("s");
+          if (meter) meter.hidden = !step.progress;
+          task.querySelector("s i").style.width = (step.progress ? Math.round(step.local * 100) : 0) + "%";
           var art = task.querySelector(".task-art");
           if (art && art.dataset.dish !== member.dishId) {
             art.dataset.dish = member.dishId;
@@ -893,10 +975,11 @@
           }
         } else {
           task.hidden = true;
+          task.classList.remove("is-plain");
         }
       }
       var spot = member
-        ? crewSpot(stationId, member)
+        ? crewSpot(stationId, member, step)
         : { x: 72 + bench * 6, y: 54 };
       if (!member) bench += 1;
       if (!game.crewSprites[staff.id]) game.crewSprites[staff.id] = { x: spot.x, y: spot.y };
@@ -1165,10 +1248,10 @@
 
     setText("status-kitchen", crewStatus(kitchen, "等候"));
     setText("status-cashier", crewStatus(cashier, "排队"));
-    var stoveNames = (state.stoves || []).map(function (job) { return job.dishName; });
-    var tillNames = (state.tills || []).map(function (job) { return job.dishName; });
-    setText("stove-label", !kitchen.staffIds.length ? "没人" : stoveNames.length ? "正在做 " + stoveNames.join("、") : "空闲");
-    setText("till-label", !cashier.staffIds.length ? "没人，卡在收银" : tillNames.length ? "结账 " + tillNames.join("、") : "空闲");
+    var stoveSteps = stationStepText(kitchen);
+    var tillSteps = stationStepText(cashier);
+    setText("stove-label", !kitchen.staffIds.length ? "没人" : stoveSteps || "空闲");
+    setText("till-label", !cashier.staffIds.length ? "没人，卡在收银" : tillSteps || "空闲");
     var stoveFill = document.getElementById("stove-fill");
     var tillFill = document.getElementById("till-fill");
     if (stoveFill) stoveFill.style.width = (state.stove ? state.stove.progress * 100 : 0) + "%";
@@ -1389,14 +1472,8 @@
       ? "暂时无法工作。"
       : posts.length ? "现在负责" + where + "。同一时间只能做一件。" : "还在待命。点一个岗位，他就会过去。";
     var art = "";
-    if (!downStaff && member && member.busy && station && station.id === "kitchen") {
-      doing = "正在做" + member.dishName + "，完成了 " + Math.round(member.progress * 100) + "%。";
-      art = dishArt(member.dishId);
-    } else if (member && member.busy && station && station.id === "cashier") {
-      doing = "正在收" + member.dishName + "的钱，完成了 " + Math.round(member.progress * 100) + "%。";
-      art = dishArt(member.dishId);
-    } else if (member && member.busy && station && station.id === "serve") {
-      doing = "正在把" + member.dishName + "端上桌，走到 " + Math.round(member.progress * 100) + "%。";
+    if (!downStaff && member && member.busy && station) {
+      doing = stepSentence(station.id, member);
       art = dishArt(member.dishId);
     }
     var moves = downStaff

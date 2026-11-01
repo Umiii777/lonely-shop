@@ -32,6 +32,26 @@
     staffCost: 40,
     cashierBaseTime: 3.8,
     serveBaseTime: 3.5,
+    // 营业时员工头上的步骤。seconds 是这一步占整单的权重，不是额外耗时。
+    // 后厨按炒饭 4 秒来写，加总等于 cookTime；收银、传菜加总等于各自的基础耗时。
+    // 别的菜按自己的 cookTime 同比缩放。心情和效率会把每一步一起放慢或加快。
+    workSteps: {
+      kitchen: [
+        { id: "walk", label: "走向灶台", seconds: 0.5 },
+        { id: "prep", label: "准备食材", seconds: 0.8 },
+        { id: "cook", label: "正在制作", seconds: 1.9, progress: true, useDish: true },
+        { id: "plate", label: "装盘中", seconds: 0.4 },
+        { id: "handoff", label: "交给传菜", seconds: 0.4 }
+      ],
+      cashier: [
+        { id: "walk", label: "走向柜台", seconds: 1.2 },
+        { id: "pay", label: "结账", seconds: 2.6, progress: true }
+      ],
+      serve: [
+        { id: "walk", label: "走向顾客", seconds: 1.4 },
+        { id: "deliver", label: "上菜", seconds: 2.1, progress: true }
+      ]
+    },
     eatTime: 6,
     maxMenu: 2,
     startingStoves: 1,
@@ -78,9 +98,9 @@
       cooldown: 25
     },
     dishes: [
-      { id: "friedrice", name: "炒饭", price: 96, cost: 32, cookTime: 4, weight: 50 },
-      { id: "noodles", name: "面条", price: 80, cost: 24, cookTime: 3, weight: 35 },
-      { id: "signature", name: "招牌大菜", price: 160, cost: 64, cookTime: 8, weight: 15 }
+      { id: "friedrice", name: "炒饭", cookLabel: "炒饭", price: 96, cost: 32, cookTime: 4, weight: 50 },
+      { id: "noodles", name: "面条", cookLabel: "煮面", price: 80, cost: 24, cookTime: 3, weight: 35 },
+      { id: "signature", name: "招牌大菜", cookLabel: "做招牌", price: 160, cost: 64, cookTime: 8, weight: 15 }
     ]
   };
 

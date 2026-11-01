@@ -1182,7 +1182,7 @@ button.worker {
 .worker .task b {
   grid-column: 2;
   grid-row: 1;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.1;
   white-space: nowrap;
@@ -1207,6 +1207,13 @@ button.worker {
   width: 0;
   background: #e25b2a;
 }
+
+.worker .task.is-plain {
+  grid-template-rows: auto;
+}
+
+.worker .task.is-plain s,
+.worker .task s[hidden] { display: none; }
 
 .worker .mood-flag {
   position: absolute;
