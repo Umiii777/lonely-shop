@@ -195,6 +195,59 @@ function runInvariants() {
     different.completed !== first.completed || different.revenue !== first.revenue,
     "不同经营方案不应永远完全相同"
   );
+
+  function cookDuration(mood) {
+    var staff = CONFIG.staff.map(function (person) {
+      var copy = {};
+      var key;
+      for (key in person) copy[key] = person[key];
+      if (copy.id === "aming" && mood) copy.mood = mood;
+      return copy;
+    });
+    var run = createRun({
+      seed: 3,
+      menu: ["noodles"],
+      assignment: { kitchen: "aming", cashier: "xiaoyu", serve: "dazhuang" },
+      staff: staff,
+      config: CONFIG
+    });
+    var guard = 0;
+    while (!run.isOver() && guard < 500) {
+      run.step(CONFIG.simStep);
+      guard += 1;
+      var job = run.getState().stations[0].current;
+      if (job) return job.duration;
+    }
+    return null;
+  }
+  var plainCook = cookDuration("");
+  var sadCook = cookDuration("沮丧");
+  var gladCook = cookDuration("开心");
+  assert(plainCook != null && sadCook != null && gladCook != null, "心情测试没有等到后厨开工");
+  assert(approxEqual(plainCook, 3 / 1.3), "平常心情后厨应为 1.3×，实际 " + plainCook);
+  assert(approxEqual(sadCook, 3 / (1.3 * 0.9)), "沮丧应把效率乘 0.9，实际 " + sadCook);
+  assert(approxEqual(gladCook, 3 / (1.3 * 1.1)), "开心应把效率乘 1.1，实际 " + gladCook);
+  assert(sadCook > plainCook && plainCook > gladCook, "沮丧应慢于平常，开心应快于平常");
+
+  var carrier = createRun({
+    seed: 1,
+    menu: ["noodles"],
+    assignment: { kitchen: ["aming"], cashier: ["aming"], serve: ["aming", "dazhuang"] },
+    staff: CONFIG.staff,
+    config: CONFIG
+  });
+  var firstServer = null;
+  var carryGuard = 0;
+  while (!carrier.isOver() && carryGuard < 4000) {
+    carrier.step(CONFIG.simStep);
+    carryGuard += 1;
+    var busyServe = (carrier.getState().stations[2].crew || []).filter(function (member) {
+      return member.busy;
+    });
+    if (!firstServer && busyServe.length === 1) firstServer = busyServe[0].staffId;
+    if (firstServer) break;
+  }
+  assert(firstServer === "dazhuang", "第一单传菜应交给专人，实际是 " + firstServer);
 }
 
 function average(list, key) {

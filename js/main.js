@@ -107,10 +107,38 @@
     return game.persona[staffId];
   }
 
+  function rollMoods() {
+    rosterPool().forEach(function (staff) {
+      personaOf(staff.id).mood = pickLabel(CONFIG.moods);
+    });
+  }
+
+  function moodFactorOf(mood) {
+    var table = CONFIG.moodFactor || {};
+    if (!mood || table[mood] == null) return 1;
+    return table[mood];
+  }
+
+  function rosterForSim() {
+    return activeRoster().map(function (staff) {
+      var copy = {};
+      var key;
+      for (key in staff) if (Object.prototype.hasOwnProperty.call(staff, key)) copy[key] = staff[key];
+      copy.mood = personaOf(staff.id).mood;
+      return copy;
+    });
+  }
+
   function moodMark(mood) {
     if (mood === "开心") return "mood-up";
     if (mood === "沮丧") return "mood-down";
     return "mood-ok";
+  }
+
+  function formatMul(n) {
+    var hundred = Math.round(n * 100) / 100;
+    if (Math.abs(hundred - Math.round(hundred * 10) / 10) < 0.001) return (Math.round(n * 10) / 10).toFixed(1);
+    return hundred.toFixed(2);
   }
 
   function personaTags(personality, mood) {
@@ -133,7 +161,7 @@
   function efficiencyOf(staff, stationId) {
     if (!staff) return 0;
     var bonus = staff.specialty === "any" || staff.specialty === stationId ? staff.bonus : 0;
-    return staff.efficiency * (1 + bonus);
+    return staff.efficiency * (1 + bonus) * moodFactorOf(personaOf(staff.id).mood);
   }
 
   function crewOf(stationId) {
@@ -415,11 +443,14 @@
       var posts = postsOf(staff.id);
       var selected = game.selectedStaffId === staff.id;
       var where = posts.length ? posts.map(stationName).join("、") : "待命";
+      var mood = personaOf(staff.id).mood;
+      var moodExtra = mood === "平常" ? "" : " · " + formatMul(moodFactorOf(mood)) + "×";
       return (
         '<button type="button" class="card staff' + (selected ? " is-selected" : "") + '" data-staff="' + staff.id + '">' +
           staffFigure(staff.id) +
           "<strong>" + staff.name + "</strong>" +
           '<em class="trait">' + staff.trait + "</em>" +
+          '<span class="mood-chip ' + moodMark(mood) + '">' + escapeHtml(mood) + moodExtra + "</span>" +
           '<span class="meta">' + where + "</span>" +
         "</button>"
       );
@@ -431,7 +462,7 @@
       var names = list.map(function (id) {
         var person = staffById(id);
         if (!person) return id;
-        return person.name + " " + efficiencyOf(person, station.id).toFixed(1) + "×";
+        return person.name + " " + formatMul(efficiencyOf(person, station.id)) + "×";
       }).join("、");
       var countLabel = cap === Infinity ? list.length + " 人 · 不限" : list.length + " / " + cap + " 人";
       var limit = station.id === "serve"
@@ -530,16 +561,18 @@
           '<div class="shop-bar" aria-hidden="true"></div>' +
           '<section class="zone kitchen" id="zone-kitchen">' +
             '<h2>后厨</h2>' +
+            '<div class="jam" id="jam-kitchen" hidden></div>' +
             '<div class="stove"><div class="gear-row" id="stove-row"></div><span class="stove-art" id="stove-art"></span><span class="meter"><i id="stove-fill"></i></span><em id="stove-label">空闲</em></div>' +
             '<div class="fridge"></div>' +
             '<p class="zone-status" id="status-kitchen"></p>' +
           "</section>" +
           '<section class="zone cashier" id="zone-cashier">' +
             '<h2>收银台</h2>' +
+            '<div class="jam" id="jam-cashier" hidden></div>' +
             '<div class="counter"><div class="gear-row" id="till-row"></div><span class="meter"><i id="till-fill"></i></span><em id="till-label">空闲</em></div>' +
             '<p class="zone-status" id="status-cashier"></p>' +
           "</section>" +
-          '<section class="zone dining" id="zone-dining"><p class="seat-note" id="seat-note"></p><div class="plant"></div></section>' +
+          '<section class="zone dining" id="zone-dining"><p class="seat-note" id="seat-note"></p><div class="jam jam-serve" id="jam-serve" hidden></div><div class="plant"></div></section>' +
           stools +
           '<div class="entrance"><span>门口</span><p id="door-note">客人即将进门</p></div>' +
           '<div class="sidewalk" aria-hidden="true"></div>' +
@@ -712,9 +745,9 @@
   }
 
   var CREW_HOME = {
-    kitchen: [{ x: 30, y: 28 }, { x: 22, y: 26 }, { x: 36, y: 26 }, { x: 18, y: 29 }],
-    cashier: [{ x: 68, y: 28 }, { x: 76, y: 26 }, { x: 62, y: 26 }, { x: 80, y: 29 }],
-    serve: [{ x: 48, y: 29 }, { x: 54, y: 27 }, { x: 42, y: 27 }, { x: 58, y: 29 }]
+    kitchen: [{ x: 40, y: 28 }, { x: 36, y: 26 }, { x: 44, y: 26 }, { x: 38, y: 30 }],
+    cashier: [{ x: 58, y: 28 }, { x: 64, y: 26 }, { x: 54, y: 26 }, { x: 62, y: 30 }],
+    serve: [{ x: 24, y: 33 }, { x: 50, y: 33 }, { x: 76, y: 33 }, { x: 38, y: 33 }]
   };
 
   function crewStatus(station, queueWord) {
@@ -727,9 +760,11 @@
     var home = homes[member.index % homes.length];
     if (stationId === "serve" && member.busy && member.table != null) {
       var seat = seatPos(member.table, member.seat || 0);
+      var t = Math.max(0, Math.min(1, member.progress || 0));
+      var meetY = Math.min(seat.y - 2, home.y + 2);
       return {
-        x: home.x + (seat.x - home.x) * member.progress,
-        y: home.y
+        x: home.x + (seat.x - home.x) * t,
+        y: home.y + (meetY - home.y) * t
       };
     }
     return home;
@@ -743,7 +778,9 @@
     var rank = { serve: 3, cashier: 2, kitchen: 1 };
     state.stations.forEach(function (station) {
       (station.crew || []).forEach(function (member) {
-        var score = (member.busy ? 10 : 0) + (rank[station.id] || 0);
+        var person = staffById(member.staffId);
+        var specialty = person && person.specialty === station.id ? 20 : 0;
+        var score = (member.busy ? 100 : 0) + specialty + (rank[station.id] || 0);
         var prev = best[member.staffId];
         if (!prev || score > prev.score) best[member.staffId] = { score: score, station: station.id, member: member };
       });
@@ -758,15 +795,49 @@
         el = document.createElement("button");
         el.type = "button";
         el.dataset.who = staff.id;
-        el.innerHTML = '<span class="mark"></span><span class="face"></span><span class="torso"></span><em></em><i class="tray" hidden></i>';
+        el.innerHTML = '<strong class="task" hidden><i class="task-art"></i><b></b><s><i></i></s></strong><span class="mark"></span><span class="face"></span><span class="torso"></span><em></em><strong class="mood-flag" hidden></strong><i class="tray" hidden></i>';
         layer.appendChild(el);
       }
       var stationId = chosen ? chosen.station : "";
       var member = chosen ? chosen.member : null;
       el.dataset.station = stationId;
       var picked = game.inspect && game.inspect.kind === "staff" && game.inspect.staffId === staff.id;
-      el.className = "worker " + staffKind(staff.id) + (picked ? " is-picked" : "");
+      var mood = personaOf(staff.id).mood;
+      var busy = !!(member && member.busy && member.dishId);
+      el.className = "worker " + staffKind(staff.id) +
+        (picked ? " is-picked" : "") +
+        (busy ? " is-busy" : "") +
+        (mood === "沮丧" ? " is-down" : mood === "开心" ? " is-up" : "");
       el.querySelector("em").textContent = staff.name;
+      var flag = el.querySelector(".mood-flag");
+      if (flag) {
+        if (mood === "沮丧") {
+          flag.hidden = false;
+          flag.textContent = staff.name + "状态不佳";
+        } else if (mood === "开心") {
+          flag.hidden = false;
+          flag.textContent = staff.name + "状态很好";
+        } else {
+          flag.hidden = true;
+        }
+      }
+      var task = el.querySelector(".task");
+      if (task) {
+        if (busy) {
+          task.hidden = false;
+          var pct = Math.max(0, Math.min(100, Math.round((member.progress || 0) * 100)));
+          var verb = stationId === "kitchen" ? "正在" + member.dishName : stationId === "cashier" ? "正在结账" : "正在传菜";
+          task.querySelector("b").textContent = verb + " " + pct + "%";
+          task.querySelector("s i").style.width = pct + "%";
+          var art = task.querySelector(".task-art");
+          if (art && art.dataset.dish !== member.dishId) {
+            art.dataset.dish = member.dishId;
+            art.innerHTML = dishArt(member.dishId);
+          }
+        } else {
+          task.hidden = true;
+        }
+      }
       var spot = member
         ? crewSpot(stationId, member)
         : { x: 72 + bench * 6, y: 54 };
@@ -954,6 +1025,38 @@
     syncTransport();
   }
 
+  function paintJam(id, station) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var count = station && station.queueLength ? station.queueLength : 0;
+    if (count <= 2) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    var cap = 4;
+    var shown = Math.min(count, cap);
+    var extra = count - shown;
+    var queue = station.queue || [];
+    if (Number(el.dataset.shown) !== shown || Number(el.dataset.extra) !== extra) {
+      el.dataset.shown = String(shown);
+      el.dataset.extra = String(extra);
+      var html = "<strong>堵住了</strong>";
+      var i;
+      for (i = 0; i < shown; i++) html += "<i><b></b></i>";
+      if (extra > 0) html += "<em>+" + extra + "</em>";
+      el.innerHTML = html;
+    }
+    var patience = CONFIG.customerPatience || 25;
+    var fills = el.querySelectorAll("i > b");
+    var n;
+    for (n = 0; n < fills.length; n++) {
+      var item = queue[n];
+      var ratio = item ? (item.wait || 0) / patience : 0.4;
+      fills[n].style.width = Math.max(12, Math.min(100, ratio * 100)).toFixed(0) + "%";
+    }
+  }
+
   function updateSim() {
     paintWorld();
     syncControls();
@@ -985,14 +1088,19 @@
     var serve = byId.serve;
     var kitchenZone = document.getElementById("zone-kitchen");
     var cashierZone = document.getElementById("zone-cashier");
+    var dining = document.getElementById("zone-dining");
     if (kitchenZone) {
-      kitchenZone.classList.toggle("is-hot", kitchen.queueLength >= 4 && kitchen.staffIds && kitchen.staffIds.length > 0);
+      kitchenZone.classList.toggle("is-jam", kitchen.queueLength > 2);
       kitchenZone.classList.toggle("is-stuck", !kitchen.staffIds || !kitchen.staffIds.length);
     }
     if (cashierZone) {
-      cashierZone.classList.toggle("is-hot", cashier.queueLength >= 4 && cashier.staffIds && cashier.staffIds.length > 0);
+      cashierZone.classList.toggle("is-jam", cashier.queueLength > 2);
       cashierZone.classList.toggle("is-stuck", !cashier.staffIds || !cashier.staffIds.length);
     }
+    if (dining) dining.classList.toggle("is-jam", serve.queueLength > 2);
+    paintJam("jam-kitchen", kitchen);
+    paintJam("jam-cashier", cashier);
+    paintJam("jam-serve", serve);
 
     setText("status-kitchen", crewStatus(kitchen, "等候"));
     setText("status-cashier", crewStatus(cashier, "排队"));
@@ -1010,7 +1118,6 @@
     if (tillBox) tillBox.classList.toggle("is-multi", (state.gear ? state.gear.tills : 1) > 1);
     paintGear("stove-row", state.gear ? state.gear.stoves : 1, (state.stoves || []).length, "burner");
     paintGear("till-row", state.gear ? state.gear.tills : 1, (state.tills || []).length, "till-box");
-    var dining = document.getElementById("zone-dining");
     var seatsFull = state.gear && state.gear.free === 0 && serve.queueLength > 0;
     if (dining) dining.classList.toggle("is-full", !!seatsFull);
     if (state.gear) {
@@ -1232,18 +1339,22 @@
       if (posts.indexOf(item.id) !== -1) return '<button type="button" data-leave-post="' + item.id + '">离开' + item.name + "</button>";
       return '<button type="button" data-move="' + item.id + '">也去' + item.name + "</button>";
     }).join("");
-    var personal = staff.efficiency * (matched ? (1 + staff.bonus) : 1);
-    var effText = "效率 " + personal.toFixed(1) + "×";
+    var moodMul = moodFactorOf(face.mood);
+    var personal = staff.efficiency * (matched ? (1 + staff.bonus) : 1) * moodMul;
+    var shown = formatMul(personal);
+    var moodNote = face.mood === "沮丧" ? " · 状态不佳" : face.mood === "开心" ? " · 状态很好" : "";
+    var skilled = formatMul(staff.efficiency * (1 + staff.bonus) * moodMul);
+    var effText = "效率 " + shown + "×" + moodNote;
     if (!station) {
       effText = staff.specialty === "any"
-        ? "三个岗位都是 " + (staff.efficiency * (1 + staff.bonus)).toFixed(1) + "×"
-        : "擅长" + stationName(staff.specialty) + "，换过去是 1.3×，其他岗位 1.0×";
+        ? "三个岗位都是 " + skilled + "×" + moodNote
+        : "擅长" + stationName(staff.specialty) + "，换过去是 " + skilled + "×，其他岗位 " + formatMul(staff.efficiency * moodMul) + "×";
     } else if (staff.specialty === "any") {
-      effText = "效率 " + personal.toFixed(1) + "× · 任意岗位都熟练";
+      effText = "效率 " + shown + "× · 任意岗位都熟练" + moodNote;
     } else if (matched) {
-      effText = "效率 " + personal.toFixed(1) + "× · 擅长这个岗位";
+      effText = "效率 " + shown + "× · 擅长这个岗位" + moodNote;
     } else {
-      effText = "效率 " + personal.toFixed(1) + "× · 没有加成，换到擅长的岗位是 1.3×";
+      effText = "效率 " + shown + "× · 没有加成，换到擅长的岗位是 " + skilled + "×";
     }
     paintInspect(card,
       '<button type="button" class="inspect-close" id="inspect-close">关闭</button>' +
@@ -1539,7 +1650,7 @@
     game.selectedStaffId = id;
     game.guide = "place";
     game.hint = person.name + "来了。点一个岗位。人工每天 +" + CONFIG.staffCost + " 元。";
-    if (game.run && game.run.setRoster) game.run.setRoster(activeRoster());
+    if (game.run && game.run.setRoster) game.run.setRoster(rosterForSim());
     renderModal();
   }
 
@@ -1797,7 +1908,7 @@
         cashier: game.assignment.cashier,
         serve: game.assignment.serve
       },
-      staff: activeRoster(),
+      staff: rosterForSim(),
       gear: {
         stoves: game.gear.stoves,
         tills: game.gear.tills,
@@ -1885,6 +1996,7 @@
     game.run = null;
     game.upgradeChoice = null;
     game.guide = "done";
+    rollMoods();
     applyTier();
     renderChrome();
   }

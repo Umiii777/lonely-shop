@@ -131,7 +131,9 @@
       var staff = staffById[staffId];
       if (!staff) return 0;
       var bonus = staff.specialty === "any" || staff.specialty === stationId ? staff.bonus : 0;
-      return staff.efficiency * (1 + bonus);
+      var mood = config.moodFactor && staff.mood ? config.moodFactor[staff.mood] : 1;
+      if (mood == null) mood = 1;
+      return staff.efficiency * (1 + bonus) * mood;
     }
 
     function efficiencyAt(stationId) {
@@ -444,10 +446,22 @@
       });
       // 同一个人可以同时挂在几个岗位上，但手上只能有一单。先接传菜，再收银，再后厨，
       // 一个人包三岗时单子才走得完。每个岗位是不同的人时，这个顺序不改变结果。
+      function postCount(staffId) {
+        var count = 0;
+        STATION_ORDER.forEach(function (sid) {
+          if ((assignment[sid] || []).indexOf(staffId) !== -1) count += 1;
+        });
+        return count || 1;
+      }
       ["serve", "cashier", "kitchen"].forEach(function (id) {
         var station = stations[id];
         if (!station.slots.length) return;
-        station.slots.forEach(function (slot) {
+        var ordered = station.slots.slice().sort(function (a, b) {
+          var diff = postCount(a.staffId) - postCount(b.staffId);
+          if (diff) return diff;
+          return station.slots.indexOf(a) - station.slots.indexOf(b);
+        });
+        ordered.forEach(function (slot) {
           if (slot.current || !station.queue.length) return;
           if (busy[slot.staffId]) return;
           if (efficiencyOfStaff(slot.staffId, id) <= 0) return;
@@ -801,7 +815,7 @@
           table: customer.table,
           seat: customer.seat,
           wait: run.time - customer.enterTime,
-          late: run.time - customer.enterTime > config.customerPatience * 0.72,
+          late: (config.customerPatience || 25) - (run.time - customer.enterTime) < (config.patienceWarn == null ? 8 : config.patienceWarn),
           progress: 0,
           personality: customer.personality || "",
           mood: customer.mood || ""

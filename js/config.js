@@ -25,6 +25,8 @@
       { name: "多", min: 2, max: 4 }
     ],
     customerPatience: 25,
+    // 剩余耐心低于这个秒数时，客人头上变色。
+    patienceWarn: 8,
     // 门口外面最多这么多张等位小凳。坐满后新来的人不会停下。
     entranceWaitCap: 5,
     staffCost: 40,
@@ -58,6 +60,8 @@
     },
     personalities: ["内向", "外向", "随和"],
     moods: ["开心", "平常", "沮丧"],
+    // 乘在岗位效率上。开心 +0.1，沮丧降到 0.9，平常不变。每天开始时重抽。
+    moodFactor: { "开心": 1.1, "平常": 1, "沮丧": 0.9 },
     dishes: [
       { id: "friedrice", name: "炒饭", price: 96, cost: 32, cookTime: 4, weight: 50 },
       { id: "noodles", name: "面条", price: 80, cost: 24, cookTime: 3, weight: 35 },
